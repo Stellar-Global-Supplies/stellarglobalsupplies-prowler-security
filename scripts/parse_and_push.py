@@ -41,6 +41,23 @@ SEVERITY_MAP = {
 # Parsers
 # ---------------------------------------------------------------------------
 
+def _empty_scan(provider: str) -> dict:
+    """Return a zero-finding scan_run record so the dashboard always sees a run."""
+    return {
+        "id": str(uuid.uuid4()),
+        "provider": provider,
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "score": 0.0,
+        "total": 0,
+        "passed": 0,
+        "failed": 0,
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+    }
+
+
 def parse_json_results(filepath: str, provider: str):
     """Parse a Prowler json-results output file.
 
@@ -48,18 +65,26 @@ def parse_json_results(filepath: str, provider: str):
       - Flat array:   [ { ... }, { ... } ]
       - Envelope:     { "schema_version": "1.0.0", "total": N, "results": [...] }
 
-    Both produce an empty scan record when there are zero findings so that
-    the Worker always records that a scan ran.
+    When the file is missing or empty/invalid JSON we still return a scan_run
+    record (with zero findings) so the Worker records that a scan ran and the
+    dashboard always shows the provider — instead of silently skipping it.
     """
     try:
         with open(filepath, "r") as f:
-            raw = json.load(f)
+            content = f.read().strip()
     except FileNotFoundError:
-        print(f"[warn] File not found: {filepath} — skipping.")
-        return None, [], [], []
+        print(f"[warn] File not found: {filepath} — recording zero-finding scan.")
+        return _empty_scan(provider), [], [], []
+
+    if not content:
+        print(f"[warn] File is empty: {filepath} — recording zero-finding scan.")
+        return _empty_scan(provider), [], [], []
+
+    try:
+        raw = json.loads(content)
     except json.JSONDecodeError as e:
-        print(f"[error] Invalid JSON in {filepath}: {e}")
-        return None, [], [], []
+        print(f"[warn] Invalid JSON in {filepath}: {e} — recording zero-finding scan.")
+        return _empty_scan(provider), [], [], []
 
     # Handle both flat array and envelope formats
     if isinstance(raw, list):
@@ -68,8 +93,8 @@ def parse_json_results(filepath: str, provider: str):
         # Envelope format: { "schema_version": ..., "total": ..., "results": [...] }
         findings = raw.get("results", raw.get("findings", []))
     else:
-        print(f"[error] Unexpected JSON structure in {filepath}")
-        return None, [], [], []
+        print(f"[warn] Unexpected JSON structure in {filepath} — recording zero-finding scan.")
+        return _empty_scan(provider), [], [], []
 
     print(f"[info] Loaded {len(findings)} records from {filepath}")
 
@@ -212,13 +237,20 @@ def parse_ocsf(filepath: str, provider: str):
     """Parse a Prowler OCSF (json-ocsf) output file."""
     try:
         with open(filepath, "r") as f:
-            raw = json.load(f)
+            content = f.read().strip()
     except FileNotFoundError:
-        print(f"[warn] File not found: {filepath} — skipping.")
-        return None, [], [], []
+        print(f"[warn] File not found: {filepath} — recording zero-finding scan.")
+        return _empty_scan(provider), [], [], []
+
+    if not content:
+        print(f"[warn] File is empty: {filepath} — recording zero-finding scan.")
+        return _empty_scan(provider), [], [], []
+
+    try:
+        raw = json.loads(content)
     except json.JSONDecodeError as e:
-        print(f"[error] Invalid JSON in {filepath}: {e}")
-        return None, [], [], []
+        print(f"[warn] Invalid JSON in {filepath}: {e} — recording zero-finding scan.")
+        return _empty_scan(provider), [], [], []
 
     findings = raw if isinstance(raw, list) else raw.get("findings", [])
     parsed = []
@@ -417,8 +449,11 @@ def main():
     else:
         scan, findings, resources, edges = parse_ocsf(a.file, a.provider)
 
+    # scan is always set (at minimum a zero-finding scan_run so the dashboard
+    # records that a scan ran for this provider).
     if scan is None:
-        print("[skip] No output file produced — exiting cleanly.")
+        # Should not happen — kept as a safety net.
+        print("[skip] Parser returned no scan record — exiting cleanly.")
         sys.exit(0)
 
     ok = push(a.url, a.token, scan, findings, resources, edges)
