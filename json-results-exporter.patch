@@ -1,0 +1,926 @@
+From 8353a29f27390e4e6a76cd097b9011f8de9421d8 Mon Sep 17 00:00:00 2001
+From: Contributor <contributor@example.com>
+Date: Sun, 9 Aug 2026 13:35:56 +0530
+Subject: [PATCH] feat: add json-results output exporter
+
+- New JSONResults exporter that always generates output, even with zero findings
+- Exports every executed check (PASS, FAIL, MANUAL, MUTED) to a flat JSON schema
+- Adds json_results_file_suffix and 'json-results' to available_output_formats
+- Registers exporter in __main__.py output formats loop
+- Includes comprehensive unit tests and documentation
+- Addresses issue: 'There are no findings' no longer prevents output file creation
+---
+ docs/outputs/json-results.md                  | 165 ++++++++
+ prowler/__main__.py                           |  10 +
+ prowler/config/config.py                      |  10 +-
+ prowler/lib/outputs/json_results/__init__.py  |   0
+ .../lib/outputs/json_results/json_results.py  | 254 ++++++++++++
+ tests/lib/outputs/json_results/__init__.py    |   0
+ .../outputs/json_results/test_json_results.py | 391 ++++++++++++++++++
+ 7 files changed, 829 insertions(+), 1 deletion(-)
+ create mode 100644 docs/outputs/json-results.md
+ create mode 100644 prowler/lib/outputs/json_results/__init__.py
+ create mode 100644 prowler/lib/outputs/json_results/json_results.py
+ create mode 100644 tests/lib/outputs/json_results/__init__.py
+ create mode 100644 tests/lib/outputs/json_results/test_json_results.py
+
+diff --git a/docs/outputs/json-results.md b/docs/outputs/json-results.md
+new file mode 100644
+index 0000000..a459a8d
+--- /dev/null
++++ b/docs/outputs/json-results.md
+@@ -0,0 +1,165 @@
++# JSON Results Output (`json-results`)
++
++## Overview
++
++The `json-results` output format exports **every executed check** — not just failed findings. Unlike the existing `json-ocsf` exporter (which skips file creation when there are no findings), `json-results` **always** generates a valid JSON file, even when all checks pass.
++
++This makes it suitable for building CSPM dashboards, compliance trend reports, posture scores, and historical analysis using **complete execution history**.
++
++## Usage
++
++```bash
++# AWS scan
++prowler aws \
++  --output-formats json-results \
++  --output-directory ./output
++
++# Cloudflare scan
++prowler cloudflare \
++  --output-formats json-results \
++  --output-directory ./output
++```
++
++### Output Files
++
++| Provider   | Filename                  |
++|------------|---------------------------|
++| AWS        | `output/aws-results.json` |
++| Cloudflare | `output/cloudflare-results.json` |
++
++## JSON Schema
++
++Each record in the output array contains the following fields:
++
++| Field                  | Type    | Description                                      |
++|------------------------|---------|--------------------------------------------------|
++| `scan_id`              | string  | Unique scan identifier (e.g. `prowler-aws-<timestamp>`) |
++| `provider`             | string  | Cloud provider (`aws`, `cloudflare`, etc.)       |
++| `service`              | string  | Service name (e.g. `s3`, `waf`)                 |
++| `account_id`           | string  | Account / project ID                             |
++| `account_name`         | string  | Account display name                             |
++| `region`               | string  | Region or zone name                              |
++| `resource_uid`         | string  | Unique resource identifier (ARN, zone ID, etc.)  |
++| `resource_name`        | string  | Human-readable resource name                     |
++| `resource_type`        | string  | Resource type (e.g. `AWS::S3::Bucket`)          |
++| `check_id`             | string  | Prowler check ID                                 |
++| `check_title`          | string  | Check title                                      |
++| `check_description`    | string  | Check description                                |
++| `status`               | string  | Execution status: `PASS`, `FAIL`, `MANUAL`, `MUTED` |
++| `status_code`          | string  | Same as `status` (raw enum value)                |
++| `severity`             | string  | Severity: `critical`, `high`, `medium`, `low`, `informational` |
++| `risk`                 | string  | Risk description                                 |
++| `categories`           | array   | Check categories (e.g. `["internet-exposed"]`)   |
++| `compliance_frameworks`| array   | Compliance frameworks matched (e.g. `["cis_3.0_aws"]`) |
++| `tags`                 | object  | Resource tags as key-value pairs                 |
++| `execution_time`       | number  | Execution time in seconds (0 if unavailable)     |
++| `timestamp`            | string  | ISO 8601 timestamp of the finding                |
++| `remediation`          | object  | Remediation details (see below)                   |
++| `documentation_url`    | string  | Link to check documentation                      |
++| `metadata`             | object  | Full check metadata (Pydantic `.dict()`)         |
++| `raw_result`           | object  | Raw check result data                            |
++
++### Remediation Object
++
++```json
++{
++  "recommendation_text": "Remove public access from the S3 bucket",
++  "recommendation_url": "https://hub.prowler.com/checks/aws/s3_bucket_public_read",
++  "code": {
++    "native_iac": "",
++    "terraform": "resource \"aws_s3_bucket\" \"example\" {\n  acl = \"private\"\n}",
++    "cli": "aws s3api put-bucket-acl --bucket my-bucket --private",
++    "other": ""
++  }
++}
++```
++
++## Example Output
++
++```json
++[
++  {
++    "scan_id": "prowler-aws-20250115T103000Z",
++    "provider": "aws",
++    "service": "s3",
++    "account_id": "123456789012",
++    "account_name": "production",
++    "region": "us-east-1",
++    "resource_uid": "arn:aws:s3:::my-bucket",
++    "resource_name": "my-bucket",
++    "resource_type": "AWS::S3::Bucket",
++    "check_id": "s3_bucket_public_read",
++    "check_title": "S3 Bucket Public Read Access",
++    "check_description": "Ensure S3 buckets are not publicly accessible",
++    "status": "PASS",
++    "status_code": "PASS",
++    "severity": "medium",
++    "risk": "Public read access to S3 buckets can expose sensitive data",
++    "categories": ["internet-exposed"],
++    "compliance_frameworks": ["cis_3.0_aws"],
++    "tags": {"Environment": "production"},
++    "execution_time": 0,
++    "timestamp": "2025-01-15T10:30:00+00:00",
++    "remediation": {
++      "recommendation_text": "Remove public access from the S3 bucket",
++      "recommendation_url": "https://hub.prowler.com/checks/aws/s3_bucket_public_read",
++      "code": {
++        "native_iac": "",
++        "terraform": "...",
++        "cli": "aws s3api put-bucket-acl --bucket my-bucket --private",
++        "other": ""
++      }
++    },
++    "documentation_url": "",
++    "metadata": {
++      "Provider": "aws",
++      "CheckID": "s3_bucket_public_read",
++      "CheckTitle": "S3 Bucket Public Read Access",
++      "ServiceName": "s3",
++      "Severity": "medium",
++      "ResourceType": "AWS::S3::Bucket",
++      ...
++    },
++    "raw_result": {"bucket_name": "my-bucket"}
++  }
++]
++```
++
++## Key Features
++
++1. **Always generates output**: The file is created even when there are zero findings (outputs `[]`).
++2. **Complete execution history**: Includes PASS, FAIL, MANUAL, and MUTED checks.
++3. **No breaking changes**: Existing output formats (`csv`, `json-ocsf`, `html`, `json-asff`, `sarif`) are untouched.
++4. **Direct serialization**: Uses Pydantic's `.dict()` for reliable, type-safe serialization.
++5. **Provider-agnostic**: Works with AWS, Cloudflare, and any other Prowler provider.
++
++## Integration with CSPM Dashboard
++
++The `json-results` format is designed for ingestion into your Cloudflare Worker + D1 database pipeline:
++
++1. **Worker**: Fetch the JSON file, parse it, and insert records into D1.
++2. **D1 Schema**: Store each record with indexes on `provider`, `account_id`, `service`, `check_id`, `status`, `timestamp`.
++3. **Dashboard Queries**:
++   - Posture score: `SELECT COUNT(*) FROM results WHERE status = 'FAIL'`
++   - Trends: `SELECT DATE(timestamp), COUNT(*) FROM results GROUP BY DATE(timestamp)`
++   - Compliance: `SELECT * FROM results WHERE compliance_frameworks LIKE '%cis_3.0_aws%'`
++
++## Comparison with Other Formats
++
++| Feature               | `json-results` | `json-ocsf` | `csv`  |
++|-----------------------|----------------|-------------|--------|
++| Always outputs file   | ✅ Yes         | ❌ No       | ❌ No  |
++| Includes PASS checks  | ✅ Yes         | ✅ Yes      | ✅ Yes |
++| Includes FAIL checks  | ✅ Yes         | ✅ Yes      | ✅ Yes |
++| Includes MANUAL       | ✅ Yes         | ✅ Yes      | ✅ Yes |
++| Schema                | Flat JSON      | OCSF        | Flat CSV |
++| Best for              | Dashboards     | SIEMs       | Spreadsheets |
++
++## Files Modified
++
++- `prowler/lib/outputs/json_results/__init__.py` — Package init
++- `prowler/lib/outputs/json_results/json_results.py` — Exporter implementation
++- `prowler/config/config.py` — Added `json_results_file_suffix` and `"json-results"` to `available_output_formats`
++- `prowler/__main__.py` — Registered the exporter in the output formats loop
++- `tests/lib/outputs/json_results/__init__.py` — Test package init
++- `tests/lib/outputs/json_results/test_json_results.py` — Unit tests
+diff --git a/prowler/__main__.py b/prowler/__main__.py
+index 2d77068..035867a 100644
+--- a/prowler/__main__.py
++++ b/prowler/__main__.py
+@@ -16,6 +16,7 @@ from prowler.config.config import (
+     html_file_suffix,
+     json_asff_file_suffix,
+     json_ocsf_file_suffix,
++    json_results_file_suffix,
+     orange_color,
+     sarif_file_suffix,
+ )
+@@ -126,6 +127,7 @@ from prowler.lib.outputs.compliance.prowler_threatscore.prowler_threatscore_m365
+ from prowler.lib.outputs.csv.csv import CSV
+ from prowler.lib.outputs.finding import Finding
+ from prowler.lib.outputs.html.html import HTML
++from prowler.lib.outputs.json_results.json_results import JSONResults
+ from prowler.lib.outputs.ocsf.ingestion import send_ocsf_to_api
+ from prowler.lib.outputs.ocsf.ocsf import OCSF
+ from prowler.lib.outputs.outputs import extract_findings_statistics, report
+@@ -627,6 +629,14 @@ def prowler():
+                 generated_outputs["regular"].append(sarif_output)
+                 sarif_output.batch_write_data_to_file()
+ 
++            if mode == "json-results":
++                json_results_output = JSONResults(
++                    findings=finding_outputs,
++                    file_path=f"{filename}{json_results_file_suffix}",
++                )
++                generated_outputs["regular"].append(json_results_output)
++                json_results_output.batch_write_data_to_file()
++
+     if getattr(args, "push_to_cloud", False):
+         if not ocsf_output or not getattr(ocsf_output, "file_path", None):
+             tmp_ocsf = tempfile.NamedTemporaryFile(
+diff --git a/prowler/config/config.py b/prowler/config/config.py
+index e2732a9..5be28cb 100644
+--- a/prowler/config/config.py
++++ b/prowler/config/config.py
+@@ -212,6 +212,7 @@ csv_file_suffix = ".csv"
+ json_file_suffix = ".json"
+ json_asff_file_suffix = ".asff.json"
+ json_ocsf_file_suffix = ".ocsf.json"
++json_results_file_suffix = ".results.json"
+ html_file_suffix = ".html"
+ sarif_file_suffix = ".sarif"
+ default_config_file_path = (
+@@ -224,7 +225,14 @@ default_redteam_config_file_path = (
+     f"{pathlib.Path(os.path.dirname(os.path.realpath(__file__)))}/llm_config.yaml"
+ )
+ encoding_format_utf_8 = "utf-8"
+-available_output_formats = ["csv", "json-asff", "json-ocsf", "html", "sarif"]
++available_output_formats = [
++    "csv",
++    "json-asff",
++    "json-ocsf",
++    "json-results",
++    "html",
++    "sarif",
++]
+ 
+ # Prowler Cloud API settings
+ cloud_api_base_url = os.getenv("PROWLER_CLOUD_API_BASE_URL", "https://api.prowler.com")
+diff --git a/prowler/lib/outputs/json_results/__init__.py b/prowler/lib/outputs/json_results/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/prowler/lib/outputs/json_results/json_results.py b/prowler/lib/outputs/json_results/json_results.py
+new file mode 100644
+index 0000000..a3d7e83
+--- /dev/null
++++ b/prowler/lib/outputs/json_results/json_results.py
+@@ -0,0 +1,254 @@
++"""
++JSON Results exporter for Prowler.
++
++This module implements the ``json-results`` output format, which exports
++**every** executed check — not just failed findings.  Unlike the existing
++``json-ocsf`` exporter (which returns early when the findings list is empty
++and therefore never creates an output file when all checks pass), the
++``JSONResults`` exporter **always** writes a file, even when there are zero
++findings.
++
++The output is a JSON array of objects, one per executed check, with a rich
++schema designed for ingestion into downstream CSPM dashboards (e.g. a
++Cloudflare Worker + D1 database).
++"""
++
++import json
++import os
++from datetime import datetime
++from typing import Any, Dict, List, Optional
++
++from prowler.config.config import timestamp_iso
++from prowler.lib.logger import logger
++from prowler.lib.outputs.finding import Finding
++from prowler.lib.outputs.output import Output
++from prowler.lib.outputs.utils import unroll_dict, unroll_list
++
++
++class JSONResults(Output):
++    """
++    JSON Results exporter that serializes every executed check.
++
++    Unlike the OCSF exporter, this class:
++
++    * **Always** creates the output file — even when ``findings`` is empty.
++    * Does **not** return early when there are no findings.
++    * Produces a flat, dashboard-friendly JSON schema with every field
++      requested by the CSPM platform.
++
++    Attributes:
++        _data: A list of dictionaries, one per executed check.
++        _file_descriptor: A file descriptor to write the results to a file.
++    """
++
++    def __init__(
++        self,
++        findings: List[Finding],
++        file_path: str = None,
++        file_extension: str = "",
++        from_cli: bool = True,
++    ) -> None:
++        """Initialize the JSONResults exporter.
++
++        Overrides ``Output.__init__`` so that the file is always created,
++        even when ``findings`` is empty.  The parent class skips
++        ``transform()`` and ``create_file_descriptor()`` when the findings
++        list is falsy, which is exactly the behaviour we need to avoid.
++
++        Args:
++            findings: List of ``Finding`` objects (may be empty).
++            file_path: Path to the output file.
++            file_extension: File extension override.
++            from_cli: Whether the exporter is invoked from the CLI.
++        """
++        # Initialise the parent without calling transform — we handle that
++        # ourselves below so that an empty findings list still produces a
++        # file.
++        self._data: list = []
++        self.close_file = False
++        self.file_path = file_path
++        self._file_descriptor = None
++        self._from_cli = from_cli
++
++        if not file_extension and file_path:
++            from pathlib import Path
++
++            self._file_extension = "".join(Path(file_path).suffixes)
++        if file_extension:
++            self._file_extension = file_extension
++            self.file_path = f"{file_path}{self.file_extension}"
++
++        # Always transform — even when findings is empty — so that the
++        # output file is always generated.
++        self.transform(findings)
++        if not self._file_descriptor and file_path:
++            self.create_file_descriptor(self.file_path)
++
++    def transform(self, findings: List[Finding]) -> None:
++        """Transform every ``Finding`` into a flat JSON-serializable dict.
++
++        Each finding is mapped to the schema requested by the CSPM platform:
++
++        ``scan_id``, ``provider``, ``service``, ``account_id``,
++        ``account_name``, ``region``, ``resource_uid``, ``resource_name``,
++        ``resource_type``, ``check_id``, ``check_title``,
++        ``check_description``, ``status``, ``status_code``, ``severity``,
++        ``risk``, ``categories``, ``compliance_frameworks``, ``tags``,
++        ``execution_time``, ``timestamp``, ``remediation``,
++        ``documentation_url``, ``metadata``, ``raw_result``.
++
++        Args:
++            findings: A list of ``Finding`` objects.
++        """
++        try:
++            for finding in findings:
++                record = self._finding_to_dict(finding)
++                self._data.append(record)
++        except Exception as error:
++            logger.error(
++                f"{error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
++            )
++
++    def batch_write_data_to_file(self) -> None:
++        """Write the transformed data to a JSON file.
++
++        Always writes a valid JSON array (``[]`` when there are no findings),
++        guaranteeing that the output file exists and is parseable.
++        """
++        try:
++            if (
++                getattr(self, "_file_descriptor", None)
++                and not self._file_descriptor.closed
++            ):
++                # Write a JSON array — always, even when _data is empty.
++                json_output = json.dumps(self._data, indent=2, default=str)
++                self._file_descriptor.write(json_output)
++                if self.close_file or self._from_cli:
++                    self._file_descriptor.close()
++        except OSError:
++            # Propagate unrecoverable I/O errors (e.g. ENOSPC) so the caller
++            # can fail fast instead of producing a corrupt output file.
++            raise
++        except Exception as error:
++            logger.error(
++                f"{error.__class__.__name__}[{error.__traceback__.tb_lineno}]: {error}"
++            )
++
++    # ------------------------------------------------------------------
++    # Internal helpers
++    # ------------------------------------------------------------------
++
++    @staticmethod
++    def _finding_to_dict(finding: Finding) -> Dict[str, Any]:
++        """Convert a single ``Finding`` into the JSON-results schema dict.
++
++        Args:
++            finding: A ``Finding`` Pydantic model instance.
++
++        Returns:
++            A flat dictionary with all schema fields populated.
++        """
++        metadata = finding.metadata
++
++        # Build the remediation sub-dict
++        remediation: Dict[str, Any] = {}
++        if metadata.Remediation:
++            remediation = {
++                "recommendation_text": metadata.Remediation.Recommendation.Text,
++                "recommendation_url": metadata.Remediation.Recommendation.Url,
++                "code": {
++                    "native_iac": metadata.Remediation.Code.NativeIaC,
++                    "terraform": metadata.Remediation.Code.Terraform,
++                    "cli": metadata.Remediation.Code.CLI,
++                    "other": metadata.Remediation.Code.Other,
++                },
++            }
++
++        # Build the metadata sub-dict (lowercase keys for consistency)
++        metadata_dict: Dict[str, Any] = {}
++        if metadata:
++            metadata_dict = metadata.dict()
++
++        # Determine the status code and human-readable status
++        status_code = finding.status.value if hasattr(finding.status, "value") else str(finding.status)
++        status = status_code
++
++        # Build the compliance frameworks list
++        compliance_frameworks: List[str] = []
++        if finding.compliance:
++            compliance_frameworks = list(finding.compliance.keys())
++
++        # Build the tags dict
++        tags: Dict[str, str] = finding.resource_tags if finding.resource_tags else {}
++
++        # Determine the documentation URL
++        documentation_url = metadata.RelatedUrl or ""
++
++        # Determine the scan_id
++        scan_id = f"prowler-{finding.provider}-{timestamp_iso}"
++
++        # Determine the account_id
++        account_id = finding.account_uid or ""
++
++        # Determine the service
++        service = metadata.ServiceName or ""
++
++        # Determine the resource_type
++        resource_type = metadata.ResourceType or ""
++
++        # Determine the check_id
++        check_id = metadata.CheckID or ""
++
++        # Determine the check_title
++        check_title = metadata.CheckTitle or ""
++
++        # Determine the check_description
++        check_description = metadata.Description or ""
++
++        # Determine the severity
++        severity = metadata.Severity.value if hasattr(metadata.Severity, "value") else str(metadata.Severity)
++
++        # Determine the risk
++        risk = metadata.Risk or ""
++
++        # Determine the categories
++        categories: List[str] = metadata.Categories or []
++
++        # Determine the execution_time (not directly available, use 0)
++        execution_time = 0
++
++        # Determine the timestamp
++        if isinstance(finding.timestamp, datetime):
++            timestamp = finding.timestamp.isoformat()
++        else:
++            timestamp = str(finding.timestamp)
++
++        record: Dict[str, Any] = {
++            "scan_id": scan_id,
++            "provider": finding.provider,
++            "service": service,
++            "account_id": account_id,
++            "account_name": finding.account_name or "",
++            "region": finding.region or "",
++            "resource_uid": finding.resource_uid or "",
++            "resource_name": finding.resource_name or "",
++            "resource_type": resource_type,
++            "check_id": check_id,
++            "check_title": check_title,
++            "check_description": check_description,
++            "status": status,
++            "status_code": status_code,
++            "severity": severity,
++            "risk": risk,
++            "categories": categories,
++            "compliance_frameworks": compliance_frameworks,
++            "tags": tags,
++            "execution_time": execution_time,
++            "timestamp": timestamp,
++            "remediation": remediation,
++            "documentation_url": documentation_url,
++            "metadata": metadata_dict,
++            "raw_result": finding.raw,
++        }
++
++        return record
+diff --git a/tests/lib/outputs/json_results/__init__.py b/tests/lib/outputs/json_results/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/lib/outputs/json_results/test_json_results.py b/tests/lib/outputs/json_results/test_json_results.py
+new file mode 100644
+index 0000000..6c99fc8
+--- /dev/null
++++ b/tests/lib/outputs/json_results/test_json_results.py
+@@ -0,0 +1,391 @@
++"""
++Unit tests for the ``json-results`` output exporter.
++
++These tests verify that:
++
++* The exporter always creates an output file, even when there are zero
++  findings.
++* Every ``Finding`` is serialized into the expected JSON schema.
++* All statuses (PASS, FAIL, MANUAL, MUTED) are handled correctly.
++* The output is valid JSON and contains the required top-level fields.
++"""
++
++import json
++import os
++import tempfile
++from datetime import datetime, timezone
++from unittest.mock import MagicMock, patch
++
++import pytest
++
++from prowler.lib.outputs.finding import Finding
++from prowler.lib.outputs.json_results.json_results import JSONResults
++from prowler.lib.outputs.utils import unroll_tags
++
++
++# ---------------------------------------------------------------------------
++# Fixtures
++# ---------------------------------------------------------------------------
++
++
++@pytest.fixture
++def sample_check_metadata():
++    """Return a minimal ``CheckMetadata``-like object for tests."""
++    metadata = MagicMock()
++    metadata.Provider = "aws"
++    metadata.CheckID = "s3_bucket_public_read"
++    metadata.CheckTitle = "S3 Bucket Public Read Access"
++    metadata.CheckType = ["TTPs/Initial Access"]
++    metadata.ServiceName = "s3"
++    metadata.SubServiceName = ""
++    metadata.Severity = "medium"
++    metadata.ResourceType = "AWS::S3::Bucket"
++    metadata.Description = "Ensure S3 buckets are not publicly accessible"
++    metadata.Risk = "Public read access exposes sensitive data"
++    metadata.RelatedUrl = ""
++    metadata.Remediation = MagicMock()
++    metadata.Remediation.Recommendation.Text = "Remove public access"
++    metadata.Remediation.Recommendation.Url = "https://hub.prowler.com/..."
++    metadata.Remediation.Code.NativeIaC = ""
++    metadata.Remediation.Code.Terraform = ""
++    metadata.Remediation.Code.CLI = ""
++    metadata.Remediation.Code.Other = ""
++    metadata.Categories = ["internet-exposed"]
++    metadata.DependsOn = []
++    metadata.RelatedTo = []
++    metadata.Notes = ""
++    metadata.AdditionalURLs = []
++    return metadata
++
++
++@pytest.fixture
++def sample_finding_pass(sample_check_metadata):
++    """Return a PASS ``Finding``."""
++    return Finding(
++        auth_method="profile: default",
++        timestamp=datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
++        account_uid="123456789012",
++        account_name="production",
++        metadata=sample_check_metadata,
++        uid="prowler-aws-s3_bucket_public_read-123456789012-us-east-1-my-bucket",
++        status="PASS",
++        status_extended="Bucket is not publicly accessible",
++        muted=False,
++        resource_uid="arn:aws:s3:::my-bucket",
++        resource_metadata={},
++        resource_name="my-bucket",
++        resource_details="Bucket ACL does not allow public access",
++        resource_tags={"Environment": "production"},
++        region="us-east-1",
++        compliance={"cis_3.0_aws": ["1.2.3"]},
++        raw={"bucket_name": "my-bucket"},
++    )
++
++
++@pytest.fixture
++def sample_finding_fail(sample_check_metadata):
++    """Return a FAIL ``Finding``."""
++    return Finding(
++        auth_method="profile: default",
++        timestamp=datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
++        account_uid="123456789012",
++        account_name="production",
++        metadata=sample_check_metadata,
++        uid="prowler-aws-s3_bucket_public_read-123456789012-us-east-1-bad-bucket",
++        status="FAIL",
++        status_extended="Bucket is publicly accessible",
++        muted=False,
++        resource_uid="arn:aws:s3:::bad-bucket",
++        resource_metadata={},
++        resource_name="bad-bucket",
++        resource_details="Bucket ACL allows public access",
++        resource_tags={"Environment": "production"},
++        region="us-east-1",
++        compliance={"cis_3.0_aws": ["1.2.3"]},
++        raw={"bucket_name": "bad-bucket", "public": True},
++    )
++
++
++@pytest.fixture
++def sample_finding_manual(sample_check_metadata):
++    """Return a MANUAL ``Finding``."""
++    return Finding(
++        auth_method="profile: default",
++        timestamp=datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
++        account_uid="123456789012",
++        account_name="production",
++        metadata=sample_check_metadata,
++        uid="prowler-aws-s3_bucket_public_read-123456789012-us-east-1-manual-bucket",
++        status="MANUAL",
++        status_extended="This check requires manual verification",
++        muted=False,
++        resource_uid="arn:aws:s3:::manual-bucket",
++        resource_metadata={},
++        resource_name="manual-bucket",
++        resource_details="Manual review required",
++        resource_tags={},
++        region="us-east-1",
++        compliance={},
++        raw={},
++    )
++
++
++@pytest.fixture
++def sample_finding_muted(sample_check_metadata):
++    """Return a MUTED ``Finding``."""
++    return Finding(
++        auth_method="profile: default",
++        timestamp=datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
++        account_uid="123456789012",
++        account_name="production",
++        metadata=sample_check_metadata,
++        uid="prowler-aws-s3_bucket_public_read-123456789012-us-east-1-muted-bucket",
++        status="FAIL",
++        status_extended="Bucket is publicly accessible but muted",
++        muted=True,
++        resource_uid="arn:aws:s3:::muted-bucket",
++        resource_metadata={},
++        resource_name="muted-bucket",
++        resource_details="Bucket ACL allows public access",
++        resource_tags={},
++        region="us-east-1",
++        compliance={"cis_3.0_aws": ["1.2.3"]},
++        raw={"bucket_name": "muted-bucket"},
++    )
++
++
++# ---------------------------------------------------------------------------
++# Tests
++# ---------------------------------------------------------------------------
++
++
++class TestJSONResultsEmptyFindings:
++    """The exporter must always create a file, even with zero findings."""
++
++    def test_creates_file_with_empty_findings(self):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[], file_path=file_path)
++
++            assert os.path.exists(file_path)
++
++    def test_file_contains_empty_json_array(self):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[], file_path=file_path)
++
++            with open(file_path, "r") as f:
++                data = json.load(f)
++
++            assert data == []
++
++    def test_no_findings_does_not_raise(self):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            # Should not raise any exception
++            JSONResults(findings=[], file_path=file_path)
++
++
++class TestJSONResultsWithFindings:
++    """The exporter must serialize every finding correctly."""
++
++    def test_single_finding_serialization(self, sample_finding_pass):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[sample_finding_pass], file_path=file_path)
++
++            with open(file_path, "r") as f:
++                data = json.load(f)
++
++            assert len(data) == 1
++            record = data[0]
++
++            # Required top-level fields
++            assert record["provider"] == "aws"
++            assert record["service"] == "s3"
++            assert record["account_id"] == "123456789012"
++            assert record["account_name"] == "production"
++            assert record["region"] == "us-east-1"
++            assert record["resource_uid"] == "arn:aws:s3:::my-bucket"
++            assert record["resource_name"] == "my-bucket"
++            assert record["resource_type"] == "AWS::S3::Bucket"
++            assert record["check_id"] == "s3_bucket_public_read"
++            assert record["check_title"] == "S3 Bucket Public Read Access"
++            assert record["status"] == "PASS"
++            assert record["status_code"] == "PASS"
++            assert record["severity"] == "medium"
++            assert record["risk"] == "Public read access exposes sensitive data"
++            assert record["categories"] == ["internet-exposed"]
++            assert record["compliance_frameworks"] == ["cis_3.0_aws"]
++            assert record["tags"] == {"Environment": "production"}
++            assert record["timestamp"] == "2025-01-15T10:30:00+00:00"
++            assert "remediation" in record
++            assert record["documentation_url"] == ""
++            assert "metadata" in record
++            assert record["raw_result"] == {"bucket_name": "my-bucket"}
++
++    def test_multiple_findings(self, sample_finding_pass, sample_finding_fail):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(
++                findings=[sample_finding_pass, sample_finding_fail],
++                file_path=file_path,
++            )
++
++            with open(file_path, "r") as f:
++                data = json.load(f)
++
++            assert len(data) == 2
++            statuses = {r["status"] for r in data}
++            assert statuses == {"PASS", "FAIL"}
++
++    def test_fail_finding_status(self, sample_finding_fail):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[sample_finding_fail], file_path=file_path)
++
++            with open(file_path, "r") as f:
++                data = json.load(f)
++
++            assert data[0]["status"] == "FAIL"
++            assert data[0]["status_code"] == "FAIL"
++            assert data[0]["muted"] is False
++
++    def test_manual_finding_status(self, sample_finding_manual):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[sample_finding_manual], file_path=file_path)
++
++            with open(file_path, "r") as f:
++                data = json.load(f)
++
++            assert data[0]["status"] == "MANUAL"
++            assert data[0]["status_code"] == "MANUAL"
++
++    def test_muted_finding_status(self, sample_finding_muted):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[sample_finding_muted], file_path=file_path)
++
++            with open(file_path, "r") as f:
++                data = json.load(f)
++
++            assert data[0]["status"] == "FAIL"
++            assert data[0]["muted"] is True
++
++    def test_remediation_fields(self, sample_finding_pass):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[sample_finding_pass], file_path=file_path)
++
++            with open(file_path, "r") as f:
++                data = json.load(f)
++
++            remediation = data[0]["remediation"]
++            assert remediation["recommendation_text"] == "Remove public access"
++            assert remediation["recommendation_url"] == "https://hub.prowler.com/..."
++            assert "code" in remediation
++
++    def test_metadata_included(self, sample_finding_pass):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[sample_finding_pass], file_path=file_path)
++
++            with open(file_path, "r") as f:
++                data = json.load(f)
++
++            metadata = data[0]["metadata"]
++            assert metadata["CheckID"] == "s3_bucket_public_read"
++            assert metadata["ServiceName"] == "s3"
++            assert metadata["Severity"] == "medium"
++
++    def test_output_is_valid_json(self, sample_finding_pass):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[sample_finding_pass], file_path=file_path)
++
++            # Re-read and parse — will raise if invalid JSON
++            with open(file_path, "r") as f:
++                json.load(f)
++
++
++class TestJSONResultsCloudflare:
++    """The exporter must handle Cloudflare findings correctly."""
++
++    @pytest.fixture
++    def cloudflare_finding(self):
++        metadata = MagicMock()
++        metadata.Provider = "cloudflare"
++        metadata.CheckID = "cloudflare_waf_enabled"
++        metadata.CheckTitle = "WAF is enabled"
++        metadata.CheckType = []
++        metadata.ServiceName = "waf"
++        metadata.SubServiceName = ""
++        metadata.Severity = "high"
++        metadata.ResourceType = "Cloudflare::WAF::Zone"
++        metadata.Description = "Ensure WAF is enabled for the zone"
++        metadata.Risk = "Without WAF, the zone is vulnerable to attacks"
++        metadata.RelatedUrl = ""
++        metadata.Remediation = MagicMock()
++        metadata.Remediation.Recommendation.Text = "Enable WAF"
++        metadata.Remediation.Recommendation.Url = "https://hub.prowler.com/..."
++        metadata.Remediation.Code.NativeIaC = ""
++        metadata.Remediation.Code.Terraform = ""
++        metadata.Remediation.Code.CLI = ""
++        metadata.Remediation.Code.Other = ""
++        metadata.Categories = ["security"]
++        metadata.DependsOn = []
++        metadata.RelatedTo = []
++        metadata.Notes = ""
++        metadata.AdditionalURLs = []
++
++        return Finding(
++            auth_method="api_token",
++            timestamp=datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
++            account_uid="account-123",
++            account_name="My Cloudflare Account",
++            metadata=metadata,
++            uid="prowler-cloudflare-waf_enabled-account-123-global-zone-example",
++            status="FAIL",
++            status_extended="WAF is not enabled for the zone",
++            muted=False,
++            resource_uid="zone-123",
++            resource_metadata={},
++            resource_name="example.com",
++            resource_details="WAF is disabled",
++            resource_tags={},
++            region="example.com",
++            compliance={},
++            raw={"zone_id": "zone-123"},
++        )
++
++    def test_cloudflare_finding(self, cloudflare_finding):
++        with tempfile.TemporaryDirectory() as tmpdir:
++            file_path = os.path.join(tmpdir, "output.results.json")
++            JSONResults(findings=[cloudflare_finding], file_path=file_path)
++
++            with open(file_path, "r") as f:
++                data = json.load(f)
++
++            assert len(data) == 1
++            record = data[0]
++            assert record["provider"] == "cloudflare"
++            assert record["service"] == "waf"
++            assert record["account_id"] == "account-123"
++            assert record["account_name"] == "My Cloudflare Account"
++            assert record["region"] == "example.com"
++            assert record["resource_name"] == "example.com"
++            assert record["status"] == "FAIL"
++
++
++class TestJSONResultsDataProperty:
++    """The ``data`` property must reflect the transformed findings."""
++
++    def test_data_property_empty(self):
++        exporter = JSONResults(findings=[])
++        assert exporter.data == []
++
++    def test_data_property_with_findings(self, sample_finding_pass):
++        exporter = JSONResults(findings=[sample_finding_pass])
++        assert len(exporter.data) == 1
++        assert exporter.data[0]["check_id"] == "s3_bucket_public_read"
+-- 
+2.39.5 (Apple Git-154)
+
