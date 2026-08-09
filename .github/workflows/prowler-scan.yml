@@ -65,6 +65,16 @@ jobs:
             --output-filename cf-findings \
             --ignore-exit-code-3
         continue-on-error: true
+      
+      - name: Test Worker with curl
+        run: |
+          curl -v \
+            -X POST \
+            "${{ secrets.CF_WORKER_INGEST_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.CF_WORKER_INGEST_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: GitHubActions" \
+            -d '{}'
 
       - name: Push Cloudflare findings to D1
         if: always()
