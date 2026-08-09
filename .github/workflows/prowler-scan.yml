@@ -9,17 +9,22 @@ jobs:
   scan-aws:
     name: Scan AWS
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # Required for OIDC authentication
+      contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
 
       - name: Install Prowler
         run: pip install prowler --quiet
 
       - name: Run Prowler on AWS
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
         run: |
           prowler aws \
             --output-formats json-ocsf \
