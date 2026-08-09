@@ -7,7 +7,7 @@ workers_dev = true
 [[d1_databases]]
 binding = "DB"
 database_name = "prowler-db"
-database_id = "YOUR_D1_DATABASE_ID"   # replace after: wrangler d1 create prowler-db
+database_id = "bbe69e41-884c-4156-8939-2d5d2d5b8828"   # replace after: wrangler d1 create prowler-db
 
 [vars]
 ENVIRONMENT = "production"
@@ -15,7 +15,7 @@ ENVIRONMENT = "production"
 [[secrets_store_secrets]]
 binding = "INGEST_TOKEN"
 store_id = "2556bcd9458349f6b4ff2a3fc93bdba1"
-secret_name = "CF_API_TOKEN"
+secret_name = "INGEST_TOKEN"
 
 [observability]
 enabled = true
