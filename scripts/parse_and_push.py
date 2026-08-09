@@ -23,8 +23,12 @@ SEVERITY_MAP={"critical":4,"high":3,"medium":2,"low":1,"informational":0}
 ATTACK_RELATIONSHIPS={}
 
 def parse_ocsf(filepath:str, provider:str):
-    with open(filepath,"r") as f:
-        raw=json.load(f)
+    try:
+        with open(filepath,"r") as f:
+            raw=json.load(f)
+    except FileNotFoundError:
+        print(f"[warn] File not found: {filepath}, skipping.")
+        return None, [], [], []
     findings=raw if isinstance(raw,list) else raw.get("findings",[])
     parsed=[]
     resources={}
@@ -123,6 +127,9 @@ def main():
     ap.add_argument("--token",required=True)
     a=ap.parse_args()
     scan,findings,resources,edges=parse_ocsf(a.file,a.provider)
+    if scan is None:
+        print("[skip] No findings file, exiting cleanly.")
+        sys.exit(0)
     push(a.url,a.token,scan,findings,resources,edges)
 
 if __name__=="__main__":
