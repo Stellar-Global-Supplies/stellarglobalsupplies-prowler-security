@@ -1,0 +1,74 @@
+name: Prowler Security Scan
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # Every hour — free because repo is public
+  workflow_dispatch:        # Allow manual trigger from GitHub UI
+
+jobs:
+  scan-aws:
+    name: Scan AWS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Prowler
+        run: pip install prowler --quiet
+
+      - name: Run Prowler on AWS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          prowler aws \
+            --output-formats json-ocsf \
+            --output-directory ./output \
+            --output-filename aws-findings \
+            --ignore-exit-code-3
+        continue-on-error: true
+
+      - name: Push AWS findings to D1
+        if: always()
+        env:
+          INGEST_URL: ${{ secrets.CF_WORKER_INGEST_URL }}
+          INGEST_TOKEN: ${{ secrets.CF_WORKER_INGEST_TOKEN }}
+        run: |
+          python3 scripts/parse_and_push.py \
+            --file ./output/aws-findings.ocsf.json \
+            --provider aws \
+            --url "$INGEST_URL" \
+            --token "$INGEST_TOKEN"
+
+  scan-cloudflare:
+    name: Scan Cloudflare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Prowler
+        run: pip install prowler --quiet
+
+      - name: Run Prowler on Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          prowler cloudflare \
+            --output-formats json-ocsf \
+            --output-directory ./output \
+            --output-filename cf-findings \
+            --ignore-exit-code-3
+        continue-on-error: true
+
+      - name: Push Cloudflare findings to D1
+        if: always()
+        env:
+          INGEST_URL: ${{ secrets.CF_WORKER_INGEST_URL }}
+          INGEST_TOKEN: ${{ secrets.CF_WORKER_INGEST_TOKEN }}
+        run: |
+          python3 scripts/parse_and_push.py \
+            --file ./output/cf-findings.ocsf.json \
+            --provider cloudflare \
+            --url "$INGEST_URL" \
+            --token "$INGEST_TOKEN"
