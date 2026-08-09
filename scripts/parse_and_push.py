@@ -32,7 +32,7 @@ def parse_ocsf(filepath: str, provider: str):
             raw = json.load(f)
     except FileNotFoundError:
         print(f"[warn] File not found: {filepath}, skipping.")
-        return None, [], []
+        return None, [], [], []
 
     findings = raw if isinstance(raw, list) else raw.get("findings", [])
 
