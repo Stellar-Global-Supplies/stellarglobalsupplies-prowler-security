@@ -52,6 +52,36 @@ class JSONResults(Output):
     """
 
     # ------------------------------------------------------------------
+    # Init — override to always open the file, even with zero findings.
+    #
+    # The base Output.__init__ only calls transform() and creates the file
+    # descriptor when ``findings`` is non-empty (line: ``if findings:``).
+    # That means a clean scan (all checks pass, no failures) produces *no*
+    # output file, so the downstream parse_and_push.py never receives real
+    # data and the dashboard stays empty.
+    #
+    # We fix this by calling create_file_descriptor() ourselves whenever
+    # the parent skipped it, ensuring the file always exists after init.
+    # ------------------------------------------------------------------
+
+    def __init__(
+        self,
+        findings,
+        file_path=None,
+        file_extension="",
+        from_cli=True,
+    ):
+        super().__init__(
+            findings=findings,
+            file_path=file_path,
+            file_extension=file_extension,
+            from_cli=from_cli,
+        )
+        # Parent skipped file creation when findings was empty; open it now.
+        if not self._file_descriptor and file_path:
+            self.create_file_descriptor(file_path)
+
+    # ------------------------------------------------------------------
     # Transform  (called once by Output.__init__ when findings are present)
     # ------------------------------------------------------------------
 
