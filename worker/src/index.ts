@@ -10,7 +10,7 @@
 
 export interface Env {
   DB: D1Database;
-  INGEST_TOKEN: SecretStoreSecret;
+  INGEST_TOKEN: SecretsStoreSecret;
 }
 
 const CORS = {
@@ -49,19 +49,21 @@ async function handleIngest(req: Request, env: Env) {
 
   const { scan_run, findings, resources, edges } = body;
 
-  // Insert scan run
-  await env.DB.prepare(
-    `INSERT OR REPLACE INTO scan_runs
-     (id, provider, scanned_at, total_checks, passed, failed, critical, high, medium, low, score)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-  )
-    .bind(
-      scan_run.id, scan_run.provider, scan_run.scanned_at,
-      scan_run.total, scan_run.passed, scan_run.failed,
-      scan_run.critical, scan_run.high, scan_run.medium, scan_run.low,
-      scan_run.score
+  // Insert scan run (only on first batch when full data is present)
+  if (scan_run.provider && scan_run.scanned_at) {
+    await env.DB.prepare(
+      `INSERT OR REPLACE INTO scan_runs
+       (id, provider, scanned_at, total_checks, passed, failed, critical, high, medium, low, score)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
     )
-    .run();
+      .bind(
+        scan_run.id, scan_run.provider, scan_run.scanned_at,
+        scan_run.total, scan_run.passed, scan_run.failed,
+        scan_run.critical, scan_run.high, scan_run.medium, scan_run.low,
+        scan_run.score
+      )
+      .run();
+  }
 
   // Batch insert findings (D1 max 100 per batch)
   const CHUNK = 100;

@@ -205,18 +205,24 @@ def post(url,token,body,retries=3):
         try:
             with urllib.request.urlopen(req,timeout=120) as r:
                 print(f"[ok] HTTP {r.status} ({len(data):,} bytes)")
-                return
+                return True
         except urllib.error.HTTPError as e:
-            body=e.read().decode(errors="ignore")
-            print(f"[warn] HTTP {e.code}: {body}")
+            error_body=e.read().decode(errors="ignore")
+            print(f"[warn] HTTP {e.code}: {error_body}")
             if attempt==retries-1:
-                raise
-            time.sleep(2**attempt)
+                print(f"[error] Failed after {retries} attempts")
+                return False
+            wait_time=2**attempt
+            print(f"[retry] Waiting {wait_time}s before retry...")
+            time.sleep(wait_time)
+    return False
 
 def push(url,token,scan,findings,resources,edges):
-    chunk=100
+    chunk=50  # Reduced from 100 to avoid timeouts with large datasets
     total=(len(findings)+chunk-1)//chunk
-    print(f"Uploading {len(findings)} findings in {total} batches")
+    print(f"Uploading {len(findings)} findings in {total} batches (chunk size: {chunk})")
+    
+    failed_batches=[]
     for idx in range(total):
         batch=findings[idx*chunk:(idx+1)*chunk]
         payload={
@@ -226,7 +232,20 @@ def push(url,token,scan,findings,resources,edges):
             "edges":edges if idx==total-1 else []
         }
         print(f"Batch {idx+1}/{total}: findings={len(batch)} resources={len(payload['resources'])} edges={len(payload['edges'])}")
-        post(url,token,payload)
+        
+        success=post(url,token,payload)
+        if not success:
+            failed_batches.append(idx+1)
+            print(f"[error] Batch {idx+1}/{total} failed after retries")
+    
+    if failed_batches:
+        print(f"\n[summary] Upload completed with errors:")
+        print(f"  - Failed batches: {failed_batches}")
+        print(f"  - Successful: {total - len(failed_batches)}/{total}")
+        return False
+    else:
+        print(f"\n[success] All {total} batches uploaded successfully")
+        return True
 
 def main():
     ap=argparse.ArgumentParser()
