@@ -2,7 +2,7 @@ name: Prowler Security Scan
 
 on:
   schedule:
-    - cron: '0 * * * *'   # Every hour — free because repo is public
+    - cron: '0 * * * *'   # Every hour
   workflow_dispatch:        # Allow manual trigger from GitHub UI
 
 jobs:
@@ -23,6 +23,9 @@ jobs:
 
       - name: Install Prowler
         run: pip install prowler --quiet
+
+      - name: Apply json-results patch
+        run: python3 prowler_patches/apply_patch.py
 
       - name: Run Prowler on AWS
         run: |
@@ -54,6 +57,9 @@ jobs:
       - name: Install Prowler
         run: pip install prowler --quiet
 
+      - name: Apply json-results patch
+        run: python3 prowler_patches/apply_patch.py
+
       - name: Run Prowler on Cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -65,16 +71,6 @@ jobs:
             --output-filename cf-findings \
             --ignore-exit-code-3
         continue-on-error: true
-      
-      - name: Test Worker with curl
-        run: |
-          curl -v \
-            -X POST \
-            "${{ secrets.CF_WORKER_INGEST_URL }}" \
-            -H "Authorization: Bearer ${{ secrets.CF_WORKER_INGEST_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -H "User-Agent: GitHubActions" \
-            -d '{}'
 
       - name: Push Cloudflare findings to D1
         if: always()

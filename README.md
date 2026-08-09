@@ -213,3 +213,265 @@ prowler-dashboard/
 | Supabase Auth | Free (50k MAU) |
 | Custom domain (if you have it) | Already have it |
 | **Total** | **$0** |
+
+# Prowler `json-results` Output Format Patch
+
+This patch adds a new `--output-formats json-results` mode to Prowler that
+exports **every executed check** — not just failures — as a flat JSON array
+suitable for ingestion into a Cloudflare Worker / D1 pipeline.
+
+---
+
+## Problem
+
+Stock Prowler only exports *findings* (FAIL results by default). When all
+checks pass it prints `"There are no findings"` and writes no output file.
+This makes it impossible to build compliance dashboards, posture scores, or
+historical trend reports because passing checks are invisible.
+
+---
+
+## Solution
+
+A new output format `json-results` that:
+
+- Exports **every** executed check result (PASS, FAIL, MANUAL, MUTED, …)
+- **Never** filters results
+- **Always** writes a file, even when zero findings exist
+- Leaves every existing format (`csv`, `json-ocsf`, `html`, `json-asff`,
+  `sarif`) completely unchanged
+
+---
+
+## Files
+
+```
+prowler_patches/
+├── apply_patch.py                          # Idempotent installer
+├── README.md                               # This file
+├── prowler/
+│   └── lib/
+│       └── outputs/
+│           └── json_results/
+│               ├── __init__.py
+│               └── json_results.py         # The exporter
+└── tests/
+    └── lib/
+        └── outputs/
+            └── json_results/
+                └── test_json_results.py    # 35 unit tests
+```
+
+---
+
+## Installation
+
+```bash
+# 1. Install Prowler (if not already installed)
+pip install prowler
+
+# 2. Apply the patch (idempotent — safe to run again after pip upgrades)
+python prowler_patches/apply_patch.py
+
+# 3. Verify
+python -c "from prowler.config.config import available_output_formats; print(available_output_formats)"
+# → ['csv', 'json-asff', 'json-ocsf', 'html', 'sarif', 'json-results']
+```
+
+The script:
+1. Copies `prowler/lib/outputs/json_results/` into the installed package
+2. Adds `"json-results"` to `available_output_formats` in `config/config.py`
+3. Registers the dispatch block in `__main__.py`
+4. Adds a summary-table line in `lib/outputs/summary_table.py`
+
+> **Re-run after every `pip install --upgrade prowler`** to re-apply the patch.
+
+---
+
+## Usage
+
+### AWS
+
+```bash
+prowler aws \
+  --output-formats json-results \
+  --output-directory ./output
+```
+
+Output: `output/prowler-output-aws-<TIMESTAMP>.results.json`
+
+### Cloudflare
+
+```bash
+prowler cloudflare \
+  --output-formats json-results \
+  --output-directory ./output
+```
+
+Output: `output/prowler-output-cloudflare-<TIMESTAMP>.results.json`
+
+### Combined with other formats (existing formats are unchanged)
+
+```bash
+prowler aws \
+  --output-formats csv json-ocsf json-results \
+  --output-directory ./output
+```
+
+### Custom filename
+
+```bash
+prowler aws \
+  --output-formats json-results \
+  --output-directory ./output \
+  --output-filename aws-results
+# → output/aws-results.results.json
+```
+
+---
+
+## Output Schema
+
+```json
+{
+  "schema_version": "1.0.0",
+  "total": 247,
+  "results": [
+    {
+      "finding_uid": "prowler-aws-s3_bucket_public_access-123456789012-us-east-1-my-bucket",
+      "provider": "aws",
+      "auth_method": "profile: default",
+      "account_uid": "123456789012",
+      "account_name": "production",
+      "account_email": "aws@example.com",
+      "account_organization_uid": "o-abc123def456",
+      "account_organization_name": "MyOrg",
+      "account_ou_uid": "ou-root-abc",
+      "account_ou_name": "RootOU",
+      "account_tags": { "env": "prod" },
+      "partition": "aws",
+      "region": "us-east-1",
+      "resource_uid": "arn:aws:s3:::my-bucket",
+      "resource_name": "my-bucket",
+      "resource_type": "AwsS3Bucket",
+      "resource_details": "{}",
+      "resource_tags": { "team": "security" },
+      "resource_metadata": {},
+      "check_id": "s3_bucket_public_access",
+      "check_title": "Ensure S3 Bucket Does Not Allow Public Access",
+      "check_type": ["Software and Configuration Checks"],
+      "check_description": "Checks whether public access is blocked on S3 buckets.",
+      "service_name": "s3",
+      "subservice_name": "",
+      "status": "PASS",
+      "status_extended": "Bucket my-bucket has public access blocked.",
+      "muted": false,
+      "severity": "high",
+      "risk": "Data exposure via public S3 bucket.",
+      "compliance": {
+        "CIS AWS 1.4": ["2.1.1"]
+      },
+      "compliance_frameworks": ["CIS AWS 1.4|2.1.1"],
+      "categories": ["security"],
+      "depends_on": [],
+      "related_to": [],
+      "remediation": {
+        "recommendation_text": "Enable S3 block public access settings.",
+        "recommendation_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html",
+        "code_cli": "aws s3api put-public-access-block --bucket my-bucket --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true",
+        "code_terraform": "resource \"aws_s3_bucket_public_access_block\" \"example\" { ... }",
+        "code_native_iac": "",
+        "code_other": ""
+      },
+      "documentation_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html",
+      "notes": "",
+      "additional_urls": [],
+      "timestamp": "2025-01-15T10:30:00",
+      "prowler_version": "5.37.1",
+      "raw_metadata": {
+        "provider": "aws",
+        "checkid": "s3_bucket_public_access"
+      }
+    }
+  ]
+}
+```
+
+### Status Values
+
+| Value    | Meaning                                        |
+|----------|------------------------------------------------|
+| `PASS`   | Check passed                                   |
+| `FAIL`   | Check failed (finding)                         |
+| `MANUAL` | Check requires manual verification             |
+| `MUTED`  | Result suppressed by a mute rule               |
+
+The underlying pass/fail result for muted findings is preserved in
+`status_extended`.
+
+---
+
+## D1 / Cloudflare Worker Ingestion
+
+The JSON file is designed for direct ingestion.  Minimal Worker pseudocode:
+
+```typescript
+async function ingest(results: ResultsFile, db: D1Database) {
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO scan_results (
+      finding_uid, provider, account_uid, region,
+      check_id, check_title, status, severity,
+      compliance_frameworks, timestamp
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const r of results.results) {
+    await stmt.bind(
+      r.finding_uid, r.provider, r.account_uid, r.region,
+      r.check_id, r.check_title, r.status, r.severity,
+      JSON.stringify(r.compliance_frameworks), r.timestamp
+    ).run();
+  }
+}
+```
+
+---
+
+## Running Tests
+
+```bash
+cd /path/to/stellarglobalsupplies-prowler-security
+python -m pytest prowler_patches/tests/ -v
+```
+
+All 35 tests should pass.
+
+---
+
+## Architecture Notes
+
+### What the patch touches
+
+| File | Change |
+|------|--------|
+| `prowler/lib/outputs/json_results/json_results.py` | **New file** – the exporter |
+| `prowler/config/config.py` | Adds `"json-results"` to `available_output_formats` |
+| `prowler/__main__.py` | Imports `JSONResults`; adds dispatch block in the output-format loop |
+| `prowler/lib/outputs/summary_table.py` | Adds file path line in the post-scan summary |
+
+### What the patch does NOT touch
+
+- `json-ocsf` / `html` / `csv` / `json-asff` / `sarif` — zero changes
+- Compliance report outputs
+- Finding filtering logic
+- The `Finding.generate_output` pipeline
+- GitHub Actions workflow
+- Cloudflare Worker
+
+### Why no filtering?
+
+`finding_outputs` in `__main__.py` is built from the raw `findings` list
+returned by `execute_checks`.  That list contains every `Check_Report`
+produced by every executed check regardless of status.  The exporter simply
+serialises all of them.  The existing exporters filter implicitly through
+their `transform` methods; `JSONResults.transform` does not.
