@@ -29,8 +29,8 @@ export default function Layout({ children }) {
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <ShieldLogo />
             <div>
-              <div style={{ fontSize:15, fontWeight:700, letterSpacing:'-0.02em' }}>SecureView</div>
-              <div style={{ fontSize:11, color:'var(--muted)' }}>Cloud Security</div>
+              <div style={{ fontSize:15, fontWeight:700, letterSpacing:'-0.02em' }}>Stellar Security View</div>
+              <div style={{ fontSize:11, color:'var(--muted)' }}>Powered by Prowler</div>
             </div>
           </div>
         </div>

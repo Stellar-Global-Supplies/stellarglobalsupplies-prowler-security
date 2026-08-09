@@ -1,6 +1,6 @@
-# SecureView — Cloud Security Dashboard
+# Stellar Security View — Powered by Prowler
 
-A Wiz-like security dashboard built on your existing Cloudflare stack.  
+A Wiz-like security dashboard built on Prowler and your existing Cloudflare stack.  
 **Free. No CC. No server. Hourly scans.**
 
 ## Architecture
@@ -37,8 +37,8 @@ wrangler d1 execute prowler-db --file=../db/schema.sql
 ### 2. Deploy the Worker
 
 ```bash
-# Set your ingest auth token (make it a long random string)
-wrangler secret put INGEST_TOKEN
+# Create the ingest token secret in the Secrets Store
+npx wrangler secrets-store secret create <STORE_ID> --name CF_API_TOKEN --scopes workers --remote
 
 # Deploy
 wrangler deploy
@@ -82,16 +82,45 @@ Add these secrets to your GitHub repo (Settings → Secrets → Actions):
 
 | Secret | Value |
 |--------|-------|
-| `AWS_ACCESS_KEY_ID` | IAM user access key (read-only policy) |
-| `AWS_SECRET_ACCESS_KEY` | IAM user secret key |
+| `AWS_ROLE_ARN` | IAM role ARN with OIDC trust (replaces access keys) |
 | `CLOUDFLARE_API_TOKEN` | CF API token (read permissions only) |
 | `CLOUDFLARE_ACCOUNT_ID` | Your CF account ID |
 | `CF_WORKER_INGEST_URL` | `https://prowler-api.yourname.workers.dev/ingest` |
-| `CF_WORKER_INGEST_TOKEN` | Same token you set with `wrangler secret put` |
+| `CF_WORKER_INGEST_TOKEN` | Same token as the `CF_API_TOKEN` secret in your Secrets Store |
 
-### 7. Create AWS read-only IAM policy
+### 7. Set up AWS OIDC IAM role
 
-Create an IAM user with this policy for Prowler:
+The workflow uses **OIDC** to authenticate with AWS (no long-lived access keys needed).
+
+1. Create an OIDC Identity Provider in IAM:
+   - Provider URL: `https://token.actions.githubusercontent.com`
+   - Audience: `sts.amazonaws.com`
+2. Create a role with this trust policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:Stellar-Global-Supplies/stellarglobalsupplies-prowler-security:*"
+        }
+      }
+    }
+  ]
+}
+```
+
+3. Attach this read-only policy to the role:
 
 ```json
 {
@@ -127,7 +156,9 @@ prowler-dashboard/
 ├── scripts/
 │   └── parse_and_push.py      # Parses Prowler JSON → pushes to Worker
 ├── worker/
-│   ├── wrangler.toml          # CF Worker config
+│   ├── wrangler.toml          # CF Worker config (Secrets Store, D1, observability)
+│   ├── package.json           # Worker dependencies (wrangler, workers-types)
+│   ├── tsconfig.json          # TypeScript config
 │   └── src/index.ts           # Worker API (ingest + GET endpoints)
 ├── dashboard/
 │   ├── index.html

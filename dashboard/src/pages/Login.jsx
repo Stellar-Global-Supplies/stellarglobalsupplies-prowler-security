@@ -72,10 +72,13 @@ export default function Login() {
       <div style={s.card}>
         <div style={s.logo}>
           <ShieldIcon style={s.shield} />
-          <span style={s.brand}>SecureView</span>
+          <div>
+            <span style={s.brand}>Stellar Security View</span>
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Powered by Prowler</div>
+          </div>
         </div>
         <p style={s.sub}>
-          {mode === 'login' ? 'Sign in to your security dashboard' : 'Create your account'}
+          {mode === 'login' ? 'Sign in to Stellar Security View' : 'Create your account'}
         </p>
 
         {error && <div style={s.error}>{error}</div>}
