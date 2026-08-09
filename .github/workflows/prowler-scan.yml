@@ -27,7 +27,7 @@ jobs:
       - name: Run Prowler on AWS
         run: |
           prowler aws \
-            --output-formats json-ocsf \
+            --output-formats json-results \
             --output-directory ./output \
             --output-filename aws-findings \
             --ignore-exit-code-3
@@ -40,7 +40,7 @@ jobs:
           INGEST_TOKEN: ${{ secrets.CF_WORKER_INGEST_TOKEN }}
         run: |
           python3 scripts/parse_and_push.py \
-            --file ./output/aws-findings.ocsf.json \
+            --file ./output/aws-findings.results.json \
             --provider aws \
             --url "$INGEST_URL" \
             --token "$INGEST_TOKEN"
@@ -60,7 +60,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           prowler cloudflare \
-            --output-formats json-ocsf \
+            --output-formats json-results \
             --output-directory ./output \
             --output-filename cf-findings \
             --ignore-exit-code-3
@@ -83,7 +83,7 @@ jobs:
           INGEST_TOKEN: ${{ secrets.CF_WORKER_INGEST_TOKEN }}
         run: |
           python3 scripts/parse_and_push.py \
-            --file ./output/cf-findings.ocsf.json \
+            --file ./output/cf-findings.results.json \
             --provider cloudflare \
             --url "$INGEST_URL" \
             --token "$INGEST_TOKEN"

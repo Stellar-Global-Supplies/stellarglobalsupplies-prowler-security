@@ -82,6 +82,115 @@ def parse_ocsf(filepath:str, provider:str):
     }
     return scan,parsed,list(resources.values()),[]
 
+def parse_json_results(filepath:str, provider:str):
+    """Parse Prowler json-results output format.
+    
+    This format always generates output, even with zero findings.
+    It's a flat JSON array where each element represents an executed check.
+    """
+    try:
+        with open(filepath,"r") as f:
+            raw=json.load(f)
+    except FileNotFoundError:
+        print(f"[warn] File not found: {filepath}, skipping.")
+        return None, [], [], []
+    
+    # json-results format is a flat array of findings
+    findings = raw if isinstance(raw, list) else []
+    
+    if not findings:
+        print(f"[info] No findings in {filepath}, creating empty scan.")
+    
+    parsed=[]
+    resources={}
+    
+    # Use the first finding's scan_id if available, otherwise generate one
+    scan_id = findings[0].get("scan_id", str(uuid.uuid4())) if findings else str(uuid.uuid4())
+    
+    counts={"total":0,"passed":0,"failed":0,"critical":0,"high":0,"medium":0,"low":0}
+    
+    for f in findings:
+        # Map status: PASS/FAIL/MANUAL/MUTED
+        status_code = f.get("status_code", "FAIL")
+        status = "PASS" if status_code == "PASS" else "FAIL"
+        
+        # Map severity
+        sev = (f.get("severity", "low") or "low").lower()
+        
+        # Extract fields from flat schema
+        uid = f.get("resource_uid", "")
+        svc = (f.get("service", "") or "").lower()
+        
+        # Build description from check description and status extended
+        description = f.get("check_description", "")
+        status_extended = f.get("status_extended", "")
+        if status_extended:
+            description = f"{description} - {status_extended}" if description else status_extended
+        
+        # Build remediation text
+        remediation_data = f.get("remediation", {})
+        remediation = ""
+        if remediation_data:
+            rec_text = remediation_data.get("recommendation_text", "")
+            rec_url = remediation_data.get("recommendation_url", "")
+            if rec_text:
+                remediation = rec_text
+                if rec_url:
+                    remediation = f"{remediation}\n{rec_url}"
+        
+        parsed.append({
+            "id":str(uuid.uuid4()),
+            "scan_run_id":scan_id,
+            "provider":provider,
+            "service":svc,
+            "check_id":f.get("check_id", ""),
+            "check_title":f.get("check_title", ""),
+            "status":status,
+            "severity":sev,
+            "resource_uid":uid,
+            "resource_name":f.get("resource_name", uid),
+            "resource_type":f.get("resource_type", ""),
+            "region":f.get("region", "global"),
+            "description":description,
+            "remediation":remediation,
+            "scanned_at":f.get("timestamp", datetime.now(timezone.utc).isoformat())
+        })
+        
+        counts["total"]+=1
+        if status=="PASS":
+            counts["passed"]+=1
+        else:
+            counts["failed"]+=1
+            if sev in counts:
+                counts[sev]+=1
+        
+        # Track unique resources
+        if uid and svc:
+            rid=f"{provider}:{svc}:{uid}"
+            if rid not in resources:
+                resources[rid]={
+                    "id":rid,
+                    "provider":provider,
+                    "service":svc,
+                    "resource_uid":uid,
+                    "resource_name":f.get("resource_name", uid),
+                    "resource_type":f.get("resource_type", ""),
+                    "region":f.get("region", "global"),
+                    "risk_score":SEVERITY_MAP.get(sev,0)
+                }
+    
+    # Calculate score
+    score = round((counts["passed"] / counts["total"]) * 100, 1) if counts["total"] > 0 else 0
+    
+    scan={
+        "id":scan_id,
+        "provider":provider,
+        "scanned_at":datetime.now(timezone.utc).isoformat(),
+        "score":score,
+        **counts
+    }
+    return scan,parsed,list(resources.values()),[]
+
 def post(url,token,body,retries=3):
     data=json.dumps(body).encode()
     req=urllib.request.Request(
@@ -125,8 +234,27 @@ def main():
     ap.add_argument("--provider",required=True)
     ap.add_argument("--url",required=True)
     ap.add_argument("--token",required=True)
+    ap.add_argument("--format",default="auto",choices=["auto","ocsf","json-results"],
+                    help="Input format: auto-detect, ocsf, or json-results")
     a=ap.parse_args()
-    scan,findings,resources,edges=parse_ocsf(a.file,a.provider)
+    
+    # Auto-detect format based on file extension
+    if a.format == "auto":
+        if a.file.endswith(".results.json"):
+            fmt = "json-results"
+        elif a.file.endswith(".ocsf.json") or a.file.endswith(".json"):
+            fmt = "ocsf"
+        else:
+            print(f"[error] Cannot auto-detect format for {a.file}, use --format")
+            sys.exit(1)
+    else:
+        fmt = a.format
+    
+    if fmt == "json-results":
+        scan,findings,resources,edges=parse_json_results(a.file,a.provider)
+    else:
+        scan,findings,resources,edges=parse_ocsf(a.file,a.provider)
+    
     if scan is None:
         print("[skip] No findings file, exiting cleanly.")
         sys.exit(0)
