@@ -1,7 +1,8 @@
 name = "prowler-api"
 main = "src/index.ts"
-compatibility_date = "2024-09-23"
+compatibility_date = "2026-08-07"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
 
 [[d1_databases]]
 binding = "DB"
@@ -11,5 +12,11 @@ database_id = "YOUR_D1_DATABASE_ID"   # replace after: wrangler d1 create prowle
 [vars]
 ENVIRONMENT = "production"
 
-# Set via: wrangler secret put INGEST_TOKEN
-# INGEST_TOKEN = "your-secret-token-here"
+[[secrets_store_secrets]]
+binding = "INGEST_TOKEN"
+store_id = "2556bcd9458349f6b4ff2a3fc93bdba1"
+secret_name = "CF_API_TOKEN"
+
+[observability]
+enabled = true
+head_sampling_rate = 1

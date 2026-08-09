@@ -10,7 +10,7 @@
 
 export interface Env {
   DB: D1Database;
-  INGEST_TOKEN: string;
+  INGEST_TOKEN: SecretStoreSecret;
 }
 
 const CORS = {
@@ -30,14 +30,15 @@ function unauthorized() {
   return json({ error: "Unauthorized" }, 401);
 }
 
-function authOk(req: Request, env: Env): boolean {
+async function authOk(req: Request, env: Env): Promise<boolean> {
   const header = req.headers.get("Authorization") ?? "";
-  return header === `Bearer ${env.INGEST_TOKEN}`;
+  const token = await env.INGEST_TOKEN.get();
+  return header === `Bearer ${token}`;
 }
 
 // ── Ingest ──────────────────────────────────────────────────────────────────
 async function handleIngest(req: Request, env: Env) {
-  if (!authOk(req, env)) return unauthorized();
+  if (!(await authOk(req, env))) return unauthorized();
 
   const body = await req.json<{
     scan_run: Record<string, unknown>;
