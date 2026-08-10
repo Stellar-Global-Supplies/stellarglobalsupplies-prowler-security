@@ -143,39 +143,84 @@ async function handleIngest(req: Request, env: Env) {
 
 // ── Score ────────────────────────────────────────────────────────────────────
 async function handleScore(env: Env) {
-  const latest = await env.DB.prepare(
+  // Get all scan runs from the last 24 hours (to capture all parallel scans)
+  const recent = await env.DB.prepare(
     `SELECT provider, score, checks_executed, total_checks, passed, failed,
             critical, high, medium, low, scanned_at
      FROM scan_runs
-     ORDER BY scanned_at DESC
-     LIMIT 20`
+     WHERE scanned_at >= datetime('now', '-24 hours')
+     ORDER BY scanned_at DESC`
   ).all();
 
-  const byProvider: Record<string, unknown> = {};
-  const seen = new Set<string>();
-  for (const row of latest.results) {
+  // Aggregate by provider (sum all scan runs from last 24h)
+  const byProvider: Record<string, {
+    score: number;
+    checks_executed: number;
+    total_checks: number;
+    passed: number;
+    failed: number;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    scanned_at: string;
+  }> = {};
+
+  for (const row of recent.results) {
     const p = row.provider as string;
-    if (!seen.has(p)) { seen.add(p); byProvider[p] = row; }
+    if (!byProvider[p]) {
+      byProvider[p] = {
+        score: 0,
+        checks_executed: 0,
+        total_checks: 0,
+        passed: 0,
+        failed: 0,
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        scanned_at: row.scanned_at as string,
+      };
+    }
+
+    // Aggregate counts
+    const agg = byProvider[p]!;
+    agg.checks_executed += Number(row.checks_executed ?? row.total_checks ?? 0);
+    agg.total_checks += Number(row.total_checks ?? 0);
+    agg.passed += Number(row.passed ?? 0);
+    agg.failed += Number(row.failed ?? 0);
+    agg.critical += Number(row.critical ?? 0);
+    agg.high += Number(row.high ?? 0);
+    agg.medium += Number(row.medium ?? 0);
+    agg.low += Number(row.low ?? 0);
   }
 
+  // Recalculate scores for each provider
+  for (const provider in byProvider) {
+    const agg = byProvider[provider];
+    agg.score = agg.total_checks > 0
+      ? Math.round((agg.passed / agg.total_checks) * 100)
+      : 0;
+  }
+
+  // Calculate overall totals
   const totals = Object.values(byProvider).reduce(
-    (acc: Record<string, number>, r: unknown) => {
-      const row = r as Record<string, number>;
-      acc.checks_executed += row.checks_executed ?? row.total_checks ?? 0;
-      acc.total   += row.total_checks ?? 0;
-      acc.passed  += row.passed  ?? 0;
-      acc.failed  += row.failed  ?? 0;
-      acc.critical += row.critical ?? 0;
-      acc.high    += row.high    ?? 0;
-      acc.medium  += row.medium  ?? 0;
-      acc.low     += row.low     ?? 0;
+    (acc: Record<string, number>, r) => {
+      acc.checks_executed += r.checks_executed;
+      acc.total_checks += r.total_checks;
+      acc.passed += r.passed;
+      acc.failed += r.failed;
+      acc.critical += r.critical;
+      acc.high += r.high;
+      acc.medium += r.medium;
+      acc.low += r.low;
       return acc;
     },
-    { checks_executed: 0, total: 0, passed: 0, failed: 0, critical: 0, high: 0, medium: 0, low: 0 }
+    { checks_executed: 0, total_checks: 0, passed: 0, failed: 0, critical: 0, high: 0, medium: 0, low: 0 }
   );
 
-  const score = totals.total > 0
-    ? Math.round((totals.passed / totals.total) * 100)
+  const score = totals.total_checks > 0
+    ? Math.round((totals.passed / totals.total_checks) * 100)
     : 0;
 
   return json({ score, ...totals, by_provider: byProvider });
