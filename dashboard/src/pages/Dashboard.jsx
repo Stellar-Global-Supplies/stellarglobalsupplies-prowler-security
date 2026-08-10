@@ -53,7 +53,7 @@ export default function Dashboard() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
         <div>
           <h1 style={{ fontSize:22, fontWeight:700, letterSpacing:'-0.03em', marginBottom:4 }}>Security Overview</h1>
-          <p style={{ color:'var(--muted)', fontSize:13 }}>Scans run hourly · {total.toLocaleString()} checks executed</p>
+          <p style={{ color:'var(--muted)', fontSize:13 }}>Scans run hourly · {(score?.checks_executed ?? total).toLocaleString()} checks executed</p>
         </div>
         <LastScanBadge byProvider={score?.by_provider ?? {}} />
       </div>
@@ -89,7 +89,7 @@ export default function Dashboard() {
         <ActionCard
           icon="🔍"
           title="All Checks"
-          desc={`${total.toLocaleString()} checks executed this scan`}
+          desc={`${(score?.checks_executed ?? total).toLocaleString()} checks executed this scan`}
           color="var(--accent)"
           onClick={() => navigate('/findings')}
         />
@@ -230,20 +230,35 @@ function ProviderBreakdown({ byProvider }) {
       {entries.length === 0 && <div style={{ color:'var(--muted)', fontSize:12 }}>No data yet</div>}
       {entries.map(([provider, d]) => {
         const pct = d.score ?? 0
-        const color = pct >= 80 ? 'var(--pass)' : pct >= 60 ? 'var(--medium)' : 'var(--critical)'
+        const totalChecks = d.total_checks ?? 0
+        const checksExecuted = d.checks_executed ?? totalChecks
+        const noResources = totalChecks === 0 && checksExecuted > 0
+        const color = noResources ? 'var(--muted)' : pct >= 80 ? 'var(--pass)' : pct >= 60 ? 'var(--medium)' : 'var(--critical)'
         return (
           <div key={provider} style={{ marginBottom:16 }}>
             <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
               <span style={{ fontSize:12, textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600 }}>{provider}</span>
-              <span style={{ fontSize:12, color, fontFamily:'JetBrains Mono, monospace' }}>{pct}%</span>
+              {noResources
+                ? <span style={{ fontSize:10, color:'var(--muted)', fontStyle:'italic' }}>no resources found</span>
+                : <span style={{ fontSize:12, color, fontFamily:'JetBrains Mono, monospace' }}>{pct}%</span>
+              }
             </div>
             <div style={{ height:6, borderRadius:3, background:'var(--border2)', overflow:'hidden' }}>
-              <div style={{ height:'100%', width:`${pct}%`, background:color, borderRadius:3, boxShadow:`0 0 8px ${color}` }} />
+              {noResources
+                ? <div style={{ height:'100%', width:'100%', background:'var(--border2)', opacity:0.5, backgroundImage:'repeating-linear-gradient(45deg, transparent, transparent 4px, var(--border)30 4px, var(--border)30 8px)' }} />
+                : <div style={{ height:'100%', width:`${pct}%`, background:color, borderRadius:3, boxShadow:`0 0 8px ${color}` }} />
+              }
             </div>
             <div style={{ display:'flex', gap:12, marginTop:6, fontSize:11, color:'var(--muted)', flexWrap:'wrap' }}>
-              <span style={{ color:'var(--pass)' }}>✓ {(d.passed ?? 0).toLocaleString()} pass</span>
-              <span style={{ color:'var(--critical)' }}>✗ {(d.failed ?? 0).toLocaleString()} fail</span>
-              <span>📋 {(d.total_checks ?? 0).toLocaleString()} total</span>
+              {noResources ? (
+                <span>🔍 {checksExecuted.toLocaleString()} checks ran · 0 resources in scope</span>
+              ) : (
+                <>
+                  <span style={{ color:'var(--pass)' }}>✓ {(d.passed ?? 0).toLocaleString()} pass</span>
+                  <span style={{ color:'var(--critical)' }}>✗ {(d.failed ?? 0).toLocaleString()} fail</span>
+                  <span>📋 {totalChecks.toLocaleString()} resources checked</span>
+                </>
+              )}
             </div>
           </div>
         )

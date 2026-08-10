@@ -28,12 +28,15 @@ jobs:
         run: python3 prowler_patches/apply_patch.py
 
       - name: Run Prowler on AWS
+        id: prowler_aws
         run: |
           prowler aws \
             --output-formats json-results \
             --output-directory ./output \
             --output-filename aws-findings \
-            --ignore-exit-code-3
+            --ignore-exit-code-3 2>&1 | tee /tmp/prowler-aws.log
+          CHECKS=$(grep -oP 'Executing \K[0-9]+(?= checks)' /tmp/prowler-aws.log | tail -1 || echo "0")
+          echo "checks_executed=${CHECKS}" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
       - name: Push AWS findings to D1
@@ -45,6 +48,7 @@ jobs:
           python3 scripts/parse_and_push.py \
             --file ./output/aws-findings.results.json \
             --provider aws \
+            --checks-executed "${{ steps.prowler_aws.outputs.checks_executed }}" \
             --url "$INGEST_URL" \
             --token "$INGEST_TOKEN"
 
@@ -61,6 +65,7 @@ jobs:
         run: python3 prowler_patches/apply_patch.py
 
       - name: Run Prowler on Cloudflare
+        id: prowler_cf
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -69,7 +74,9 @@ jobs:
             --output-formats json-results \
             --output-directory ./output \
             --output-filename cf-findings \
-            --ignore-exit-code-3
+            --ignore-exit-code-3 2>&1 | tee /tmp/prowler-cf.log
+          CHECKS=$(grep -oP 'Executing \K[0-9]+(?= checks)' /tmp/prowler-cf.log | tail -1 || echo "0")
+          echo "checks_executed=${CHECKS}" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
       - name: Push Cloudflare findings to D1
@@ -81,5 +88,6 @@ jobs:
           python3 scripts/parse_and_push.py \
             --file ./output/cf-findings.results.json \
             --provider cloudflare \
+            --checks-executed "${{ steps.prowler_cf.outputs.checks_executed }}" \
             --url "$INGEST_URL" \
             --token "$INGEST_TOKEN"

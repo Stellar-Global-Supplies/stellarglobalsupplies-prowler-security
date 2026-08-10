@@ -48,6 +48,7 @@ def _empty_scan(provider: str) -> dict:
         "provider": provider,
         "scanned_at": datetime.now(timezone.utc).isoformat(),
         "score": 0.0,
+        "checks_executed": 0,
         "total": 0,
         "passed": 0,
         "failed": 0,
@@ -222,6 +223,7 @@ def parse_json_results(filepath: str, provider: str):
         "provider": provider,
         "scanned_at": datetime.now(timezone.utc).isoformat(),
         "score": score,
+        "checks_executed": counts["total"],  # overridden in main() if --checks-executed given
         **counts,
     }
 
@@ -316,6 +318,7 @@ def parse_ocsf(filepath: str, provider: str):
         "provider": provider,
         "scanned_at": datetime.now(timezone.utc).isoformat(),
         "score": round((counts["passed"] / counts["total"]) * 100, 1) if counts["total"] else 0,
+        "checks_executed": counts["total"],  # overridden in main() if --checks-executed given
         **counts,
     }
     return scan, parsed, list(resources.values()), []
@@ -428,6 +431,10 @@ def main():
         choices=["auto", "ocsf", "json-results"],
         help="Input format (default: auto-detect from file extension)",
     )
+    ap.add_argument(
+        "--checks-executed", type=int, default=0,
+        help="Number of checks Prowler actually executed (for zero-resource scans)",
+    )
     a = ap.parse_args()
 
     # Auto-detect format from file extension
@@ -455,6 +462,18 @@ def main():
         # Should not happen — kept as a safety net.
         print("[skip] Parser returned no scan record — exiting cleanly.")
         sys.exit(0)
+
+    # Always record how many checks Prowler executed.
+    # When --checks-executed is given (captured from prowler stdout in the workflow),
+    # use that value so the dashboard knows "29 checks ran, 0 resources found"
+    # rather than showing a blank/zero entry.
+    if a.checks_executed > 0:
+        scan["checks_executed"] = a.checks_executed
+        if scan.get("total", 0) == 0:
+            print(
+                f"[info] {a.checks_executed} checks executed but 0 resources found "
+                f"(no zones/resources in account) — recording no-resource scan."
+            )
 
     ok = push(a.url, a.token, scan, findings, resources, edges)
     sys.exit(0 if ok else 1)

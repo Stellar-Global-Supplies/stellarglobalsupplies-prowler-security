@@ -63,11 +63,12 @@ async function handleIngest(req: Request, env: Env) {
   if (scan_run.provider && scan_run.scanned_at) {
     await env.DB.prepare(
       `INSERT OR REPLACE INTO scan_runs
-       (id, provider, scanned_at, total_checks, passed, failed, critical, high, medium, low, score)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+       (id, provider, scanned_at, checks_executed, total_checks, passed, failed, critical, high, medium, low, score)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
     )
       .bind(
         scan_run.id, scan_run.provider, scan_run.scanned_at,
+        scan_run.checks_executed ?? scan_run.total ?? 0,
         scan_run.total, scan_run.passed, scan_run.failed,
         scan_run.critical, scan_run.high, scan_run.medium, scan_run.low,
         scan_run.score
@@ -143,7 +144,7 @@ async function handleIngest(req: Request, env: Env) {
 // ── Score ────────────────────────────────────────────────────────────────────
 async function handleScore(env: Env) {
   const latest = await env.DB.prepare(
-    `SELECT provider, score, total_checks, passed, failed,
+    `SELECT provider, score, checks_executed, total_checks, passed, failed,
             critical, high, medium, low, scanned_at
      FROM scan_runs
      ORDER BY scanned_at DESC
@@ -160,6 +161,7 @@ async function handleScore(env: Env) {
   const totals = Object.values(byProvider).reduce(
     (acc: Record<string, number>, r: unknown) => {
       const row = r as Record<string, number>;
+      acc.checks_executed += row.checks_executed ?? row.total_checks ?? 0;
       acc.total   += row.total_checks ?? 0;
       acc.passed  += row.passed  ?? 0;
       acc.failed  += row.failed  ?? 0;
@@ -169,7 +171,7 @@ async function handleScore(env: Env) {
       acc.low     += row.low     ?? 0;
       return acc;
     },
-    { total: 0, passed: 0, failed: 0, critical: 0, high: 0, medium: 0, low: 0 }
+    { checks_executed: 0, total: 0, passed: 0, failed: 0, critical: 0, high: 0, medium: 0, low: 0 }
   );
 
   const score = totals.total > 0
@@ -388,7 +390,7 @@ async function handleHistory(url: URL, env: Env) {
   const binds    = provider ? [provider, days] : [days];
 
   const rows = await env.DB.prepare(
-    `SELECT provider, score, total_checks, passed, failed,
+    `SELECT provider, score, checks_executed, total_checks, passed, failed,
             critical, high, medium, low,
             strftime('%Y-%m-%dT%H:00:00Z', scanned_at) as hour
      FROM scan_runs ${where}
