@@ -1,0 +1,37 @@
+{
+  "Provider": "cloudflare",
+  "CheckID": "kv_namespace_not_publicly_accessible",
+  "CheckTitle": "KV namespaces storing sensitive data should have key-sanitisation verified",
+  "CheckType": [],
+  "ServiceName": "kv",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "KVNamespace",
+  "ResourceGroup": "storage",
+  "Description": "Inventories KV namespaces and flags those whose title suggests they store sensitive or user-scoped data (sessions, auth tokens, cache entries keyed by user ID). Workers that use user-controlled KV keys without sanitisation can leak data between users.",
+  "Risk": "If a Worker uses user-supplied input as KV keys without validation, an attacker can enumerate or overwrite other users' data. KV has no built-in access control per key \u2014 it relies entirely on the Worker logic.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://developers.cloudflare.com/kv/api/"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "",
+      "NativeIaC": "",
+      "Other": "Audit the Worker code that uses this KV namespace to ensure user-supplied key components are namespaced (e.g. prefix with user ID hash) and that Workers do not expose raw KV key enumeration to external callers.",
+      "Terraform": ""
+    },
+    "Recommendation": {
+      "Text": "Namespace KV keys by user identifier (e.g. 'user:{userId}:session:{sessionId}') to prevent cross-user access. Never allow user-supplied strings to directly form complete KV keys without sanitisation.",
+      "Url": "https://hub.prowler.com/checks/cloudflare/kv_namespace_not_publicly_accessible"
+    }
+  },
+  "Categories": [
+    "identity-access",
+    "encryption"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "This is a naming-convention heuristic. Namespaces matching 'session', 'auth', 'token', 'user', 'cache', 'public', 'secret', or 'credential' are flagged for manual review."
+}

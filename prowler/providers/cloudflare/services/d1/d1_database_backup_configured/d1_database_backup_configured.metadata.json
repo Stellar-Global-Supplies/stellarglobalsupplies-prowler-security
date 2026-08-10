@@ -1,0 +1,37 @@
+{
+  "Provider": "cloudflare",
+  "CheckID": "d1_database_backup_configured",
+  "CheckTitle": "D1 databases should have an external backup strategy",
+  "CheckType": [],
+  "ServiceName": "d1",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "high",
+  "ResourceType": "D1Database",
+  "ResourceGroup": "database",
+  "Description": "Flags all D1 databases because Cloudflare D1 does not provide automated backups or point-in-time recovery. Operators must implement their own export strategy to protect against data loss from accidental deletion, botched migrations, or platform incidents.",
+  "Risk": "Without backups, a single bad Worker migration, an accidental DELETE query, or a Cloudflare D1 incident could result in permanent data loss. D1 is built on SQLite which has no transaction log shipping or automated snapshot capability.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://developers.cloudflare.com/d1/best-practices/"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "wrangler d1 export <database-name> --output backup.sql",
+      "NativeIaC": "",
+      "Other": "Create a scheduled Worker (Cron Trigger) that exports the D1 database and uploads the SQL dump to an R2 bucket on a regular schedule (e.g. daily).",
+      "Terraform": ""
+    },
+    "Recommendation": {
+      "Text": "Implement a scheduled backup using a Cloudflare Worker with a Cron Trigger. The Worker should call the D1 export REST API and store the resulting SQL file in an R2 bucket with versioning or lifecycle rules. Test restoration periodically.",
+      "Url": "https://hub.prowler.com/checks/cloudflare/d1_database_backup_configured"
+    }
+  },
+  "Categories": [
+    "resilience",
+    "encryption"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "This check always FAILs because D1 provides no backup API to confirm. Mute this finding in Prowler once you have confirmed a backup process is in place for each database."
+}

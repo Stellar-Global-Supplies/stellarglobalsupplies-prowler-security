@@ -1,0 +1,37 @@
+{
+  "Provider": "cloudflare",
+  "CheckID": "d1_database_not_publicly_accessible",
+  "CheckTitle": "D1 databases should not have test/public names in production accounts",
+  "CheckType": [],
+  "ServiceName": "d1",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "D1Database",
+  "ResourceGroup": "database",
+  "Description": "Inventories all D1 databases and flags any whose names suggest they are test, development, or temporary databases present in a production account. D1 databases have no public HTTP endpoint but can hold sensitive data accessed by bound Workers.",
+  "Risk": "Test or demo databases left in production accounts may contain sensitive data, use weak schemas without validation, or be bound to Workers with overly permissive logic. They widen the blast radius of a Worker compromise.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://developers.cloudflare.com/d1/best-practices/"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "wrangler d1 delete <database-name>",
+      "NativeIaC": "",
+      "Other": "Cloudflare Dashboard > Workers & Pages > D1 > [database] > Delete",
+      "Terraform": ""
+    },
+    "Recommendation": {
+      "Text": "Remove test, demo, or temporary D1 databases from production accounts. Use separate Cloudflare accounts for development and production environments.",
+      "Url": "https://hub.prowler.com/checks/cloudflare/d1_database_not_publicly_accessible"
+    }
+  },
+  "Categories": [
+    "encryption",
+    "logging"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "Databases prefixed with 'public-', 'test-', 'dev-', 'tmp-', 'temp-', or 'demo-' are flagged. This is a naming convention check \u2014 adjust prefixes to match your organisation's standards."
+}

@@ -1,0 +1,34 @@
+{
+  "Provider": "cloudflare",
+  "CheckID": "kv_namespace_title_descriptive",
+  "CheckTitle": "KV namespaces should have descriptive titles",
+  "CheckType": [],
+  "ServiceName": "kv",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "low",
+  "ResourceType": "KVNamespace",
+  "ResourceGroup": "storage",
+  "Description": "Checks that KV namespaces have descriptive titles rather than generic names. Descriptive titles make it clear which service owns the namespace, what data it contains, and whether it is safe to delete.",
+  "Risk": "Generic or undescriptive namespace names make it hard to audit ownership, leading to orphaned namespaces with unknown data, accidental deletion of production namespaces, or Workers bound to wrong namespaces.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [],
+  "Remediation": {
+    "Code": {
+      "CLI": "wrangler kv namespace rename --namespace-id <ID> --title <descriptive-name>",
+      "NativeIaC": "",
+      "Other": "Cloudflare Dashboard > Workers & Pages > KV > [namespace] > Rename",
+      "Terraform": ""
+    },
+    "Recommendation": {
+      "Text": "Rename KV namespaces to include the owning service and data type, for example: 'api-rate-limits', 'auth-sessions', 'product-cache'. Follow a consistent naming convention across your team.",
+      "Url": "https://hub.prowler.com/checks/cloudflare/kv_namespace_title_descriptive"
+    }
+  },
+  "Categories": [
+    "logging"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "Generic patterns flagged: kv1/2/3, test, temp, tmp, namespace, default, untitled, new, demo, example. Titles under 4 characters are also flagged."
+}

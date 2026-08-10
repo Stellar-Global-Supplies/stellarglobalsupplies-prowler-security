@@ -1,0 +1,34 @@
+{
+  "Provider": "cloudflare",
+  "CheckID": "pages_project_source_connected",
+  "CheckTitle": "Pages projects should be deployed from a connected Git repository",
+  "CheckType": [],
+  "ServiceName": "pages",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "low",
+  "ResourceType": "PagesProject",
+  "ResourceGroup": "compute",
+  "Description": "Checks that Cloudflare Pages projects are connected to a GitHub or GitLab repository rather than using direct upload deployments. Git-connected projects provide an audit trail, support code review workflows, and allow rollback through version control.",
+  "Risk": "Direct upload deployments bypass Git history and code review processes. There is no audit trail of what code was deployed, by whom, or when. Malicious or broken code can be deployed without a review gate.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [],
+  "Remediation": {
+    "Code": {
+      "CLI": "",
+      "NativeIaC": "",
+      "Other": "Cloudflare Dashboard > Pages > [project] > Settings > Builds & deployments > Connect to Git",
+      "Terraform": ""
+    },
+    "Recommendation": {
+      "Text": "Connect the Pages project to a GitHub or GitLab repository. This enables automatic deployments from Git, provides a full audit trail, and supports rollback to any previous commit.",
+      "Url": "https://hub.prowler.com/checks/cloudflare/pages_project_source_connected"
+    }
+  },
+  "Categories": [
+    "software-supply-chain"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": ""
+}

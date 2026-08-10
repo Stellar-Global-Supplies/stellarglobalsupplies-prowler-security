@@ -1,0 +1,36 @@
+{
+  "Provider": "cloudflare",
+  "CheckID": "workers_script_usage_model_standard",
+  "CheckTitle": "Worker scripts should use the Standard or Unbound usage model",
+  "CheckType": [],
+  "ServiceName": "workers",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "WorkerScript",
+  "ResourceGroup": "compute",
+  "Description": "Checks that Cloudflare Worker scripts are not using the legacy 'bundled' usage model. The Standard and Unbound models provide per-request CPU isolation, higher limits, and are the Cloudflare-recommended models for production workloads.",
+  "Risk": "The 'bundled' usage model shares CPU time across requests and has a 10ms CPU limit. This can lead to resource starvation, unexpected request failures, and potential timing side-channel leaks between concurrent requests.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [
+    "https://developers.cloudflare.com/workers/reference/migrate-to-module-workers/"
+  ],
+  "Remediation": {
+    "Code": {
+      "CLI": "wrangler deploy --compatibility-date 2023-01-01",
+      "NativeIaC": "",
+      "Other": "In wrangler.toml: set usage_model = \"standard\"",
+      "Terraform": ""
+    },
+    "Recommendation": {
+      "Text": "Migrate Workers to the Standard usage model by updating wrangler.toml with usage_model = \"standard\" and redeploying.",
+      "Url": "https://hub.prowler.com/checks/cloudflare/workers_script_usage_model_standard"
+    }
+  },
+  "Categories": [
+    "resilience"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "The 'unbound' model is also acceptable. Only 'bundled' is flagged."
+}

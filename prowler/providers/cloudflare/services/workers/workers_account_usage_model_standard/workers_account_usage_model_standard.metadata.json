@@ -1,0 +1,36 @@
+{
+  "Provider": "cloudflare",
+  "CheckID": "workers_account_usage_model_standard",
+  "CheckTitle": "Account-level default Workers usage model should be Standard",
+  "CheckType": [],
+  "ServiceName": "workers",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "low",
+  "ResourceType": "WorkerAccountSettings",
+  "ResourceGroup": "compute",
+  "Description": "Checks the account-level default Workers usage model. When set to 'bundled', newly deployed scripts inherit legacy resource limits unless explicitly overridden, which can introduce security and reliability risks silently.",
+  "Risk": "If the account default is 'bundled', developers who deploy new Workers without specifying a usage model will silently get the legacy model with lower CPU limits and weaker isolation.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [],
+  "Remediation": {
+    "Code": {
+      "CLI": "",
+      "NativeIaC": "",
+      "Other": "Cloudflare Dashboard > Workers & Pages > Account Settings > Default Usage Model > Standard",
+      "Terraform": ""
+    },
+    "Recommendation": {
+      "Text": "Set the account-level default Workers usage model to 'Standard' to ensure all new Workers inherit safe defaults.",
+      "Url": "https://hub.prowler.com/checks/cloudflare/workers_account_usage_model_standard"
+    }
+  },
+  "Categories": [
+    "resilience"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [
+    "workers_script_usage_model_standard"
+  ],
+  "Notes": ""
+}

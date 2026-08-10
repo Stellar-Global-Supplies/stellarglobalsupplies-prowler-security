@@ -1,0 +1,35 @@
+{
+  "Provider": "cloudflare",
+  "CheckID": "pages_project_preview_deployments_restricted",
+  "CheckTitle": "Pages project preview deployments should be disabled or restricted",
+  "CheckType": [],
+  "ServiceName": "pages",
+  "SubServiceName": "",
+  "ResourceIdTemplate": "",
+  "Severity": "medium",
+  "ResourceType": "PagesProject",
+  "ResourceGroup": "compute",
+  "Description": "Checks that Cloudflare Pages projects have preview deployments disabled. When enabled, every branch push creates a publicly accessible *.pages.dev URL that can expose development work, staging secrets, or internal tools.",
+  "Risk": "Unrestricted preview deployments can expose sensitive features, environment variables, or internal APIs before they are hardened for production. The preview URLs are publicly accessible by default with no authentication.",
+  "RelatedUrl": "",
+  "AdditionalURLs": [],
+  "Remediation": {
+    "Code": {
+      "CLI": "",
+      "NativeIaC": "",
+      "Other": "Cloudflare Dashboard > Pages > [project] > Settings > Builds & deployments > Preview deployments > Disable",
+      "Terraform": ""
+    },
+    "Recommendation": {
+      "Text": "Disable preview deployments for production Pages projects, or restrict them to specific branches only (e.g. only 'staging' branch). Use Cloudflare Access to password-protect any preview URLs that must remain enabled.",
+      "Url": "https://hub.prowler.com/checks/cloudflare/pages_project_preview_deployments_restricted"
+    }
+  },
+  "Categories": [
+    "internet-exposed",
+    "identity-access"
+  ],
+  "DependsOn": [],
+  "RelatedTo": [],
+  "Notes": "If preview deployments are needed for a staging workflow, consider protecting them with Cloudflare Access policies."
+}

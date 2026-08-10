@@ -204,6 +204,36 @@ def patch_summary_table(prowler_root: Path) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+
+
+# ---------------------------------------------------------------------------
+# Step 5 – Install custom Cloudflare services (workers, pages, d1, kv)
+# ---------------------------------------------------------------------------
+
+CUSTOM_SERVICES = ["workers", "pages", "d1", "kv"]
+
+
+def install_custom_cf_services(prowler_root: Path, patch_dir: Path) -> None:
+    """Copy custom Cloudflare service packages into the installed provider."""
+    cf_services_dst = prowler_root / "providers" / "cloudflare" / "services"
+    cf_services_src = patch_dir / "prowler" / "providers" / "cloudflare" / "services"
+
+    if not cf_services_src.exists():
+        print(f"  [SKIP] No custom CF services found in {cf_services_src}")
+        return
+
+    for svc in CUSTOM_SERVICES:
+        src = cf_services_src / svc
+        dst = cf_services_dst / svc
+        if not src.exists():
+            print(f"  [SKIP] {svc}: source not found at {src}")
+            continue
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+        check_count = sum(1 for d in dst.iterdir() if d.is_dir() and not d.name.startswith("_"))
+        print(f"  [OK]   Installed '{svc}' service ({check_count} checks) → {dst}")
+
 def main() -> None:
     import argparse
 
@@ -232,6 +262,9 @@ def main() -> None:
 
     print("Step 4 – Patching lib/outputs/summary_table.py …")
     patch_summary_table(prowler_root)
+
+    print("Step 5 – Installing custom Cloudflare services …")
+    install_custom_cf_services(prowler_root, patch_dir)
 
     print("\n✅  Patch applied successfully.\n")
     print("Test with:")
