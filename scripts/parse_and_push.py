@@ -684,8 +684,15 @@ def main():
         choices=["auto", "ocsf", "json-results"],
         help="Input format (default: auto-detect from file extension)",
     )
+    def _int_or_zero(val: str) -> int:
+        """Parse int, treating empty string as 0 (handles empty GITHUB_OUTPUT values)."""
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return 0
+
     ap.add_argument(
-        "--checks-executed", type=int, default=0,
+        "--checks-executed", type=_int_or_zero, default=0,
         help="Number of checks Prowler actually executed (for zero-resource scans)",
     )
     a = ap.parse_args()
