@@ -346,9 +346,37 @@ async function handleCompliance(env: Env) {
 }
 
 // ── Graph ─────────────────────────────────────────────────────────────────────
+// The graph is built from findings data: resources that fail the same check are
+// connected (shared-check edge = blast radius), and failing resources are linked
+// to severity hub nodes (risk concentration).  The endpoint is resilient — if
+// the D1 resources table is missing/empty it returns empty arrays instead of
+// crashing (previously returned HTTP 500 / error 1101).
+interface GraphNode {
+  id: string;
+  label: string;
+  provider: string;
+  service: string;
+  region: string;
+  risk: number;
+  findings: number;
+  severity: string;
+}
+
+interface GraphEdge {
+  source_id: string;
+  target_id: string;
+  source_label: string;
+  target_label: string;
+  relationship: string;
+  severity: string;
+}
+
 async function handleGraph(env: Env) {
-  const [resourceRows, edgeRows] = await Promise.all([
-    env.DB.prepare(
+  const SEV = ["low", "low", "medium", "high", "critical"];
+
+  try {
+    // 1. Resources + their findings stats
+    const resourceRows = await env.DB.prepare(
       `SELECT r.id, r.provider, r.service, r.resource_type,
               r.resource_name, r.region, r.risk_score,
               COUNT(f.id) as finding_count,
@@ -361,25 +389,101 @@ async function handleGraph(env: Env) {
        LEFT JOIN findings f ON f.resource_uid = r.resource_uid
        GROUP BY r.id
        LIMIT 200`
-    ).all(),
-    env.DB.prepare(
-      `SELECT source_id, target_id, source_label, target_label, relationship, severity
-       FROM graph_edges LIMIT 500`
-    ).all(),
-  ]);
+    ).all();
 
-  const nodes = resourceRows.results.map((r) => ({
-    id: r.id,
-    label: r.resource_name || r.service,
-    provider: r.provider,
-    service: r.service,
-    region: r.region,
-    risk: r.risk_score,
-    findings: r.failed_count,
-    severity: ["low","low","medium","high","critical"][(r.max_severity as number) ?? 0],
-  }));
+    // 2. Resources grouped by failing check_id (for shared-check edges)
+    const sharedCheckRows = await env.DB.prepare(
+      `SELECT f.resource_uid, f.resource_name, f.check_id, f.check_title, f.severity
+       FROM findings f
+       WHERE f.status = 'FAIL'
+       ORDER BY f.check_id, f.resource_uid`
+    ).all();
 
-  return json({ nodes, edges: edgeRows.results });
+    const nodes: GraphNode[] = (resourceRows.results ?? []).map((r) => ({
+      id: String(r.id ?? ""),
+      label: String(r.resource_name || r.service || ""),
+      provider: String(r.provider ?? ""),
+      service: String(r.service ?? ""),
+      region: String(r.region ?? "global"),
+      risk: Number(r.risk_score ?? 0),
+      findings: Number(r.failed_count ?? 0),
+      severity: SEV[Number(r.max_severity ?? 0)] ?? "low",
+    }));
+
+    // Build a set of resource ids that exist as nodes
+    const nodeIds = new Set<string>(nodes.map((n) => n.id));
+
+    const edges: GraphEdge[] = [];
+    const seenEdges = new Set<string>();
+
+    function addEdge(source: string, target: string, relationship: string, severity: string) {
+      const key = `${source}|${target}|${relationship}`;
+      if (seenEdges.has(key)) return;
+      seenEdges.add(key);
+      edges.push({
+        source_id: source,
+        target_id: target,
+        source_label: source,
+        target_label: target,
+        relationship,
+        severity: severity || "medium",
+      });
+    }
+
+    // 3a. Shared-check edges: resources failing the same check are connected
+    const byCheck = new Map<string, { uid: string; sev: string }[]>();
+    for (const f of (sharedCheckRows.results ?? [])) {
+      const uid = String(f.resource_uid ?? "");
+      if (!uid || !nodeIds.has(uid)) continue;
+      const checkId = String(f.check_id ?? "");
+      if (!checkId) continue;
+      if (!byCheck.has(checkId)) byCheck.set(checkId, []);
+      byCheck.get(checkId)!.push({
+        uid,
+        sev: String(f.severity ?? "medium"),
+      });
+    }
+
+    for (const [checkId, res] of byCheck) {
+      // Connect consecutive resources in the group (chain) to show blast radius
+      for (let i = 0; i < res.length - 1; i++) {
+        const sev = res[i].sev || res[i + 1].sev || "medium";
+        addEdge(res[i].uid, res[i + 1].uid, checkId, sev);
+      }
+    }
+
+    // 3b. Severity hub edges: connect each failing resource to a severity hub
+    const hubNodes = new Map<string, GraphNode>();
+    for (const f of (sharedCheckRows.results ?? [])) {
+      const uid = String(f.resource_uid ?? "");
+      if (!uid || !nodeIds.has(uid)) continue;
+      const sev = String(f.severity ?? "medium");
+      const hubId = `hub-${sev}`;
+      if (!hubNodes.has(hubId)) {
+        hubNodes.set(hubId, {
+          id: hubId,
+          label: `${sev} risk hub`,
+          provider: "hub",
+          service: "risk",
+          region: "global",
+          risk: 0,
+          findings: 0,
+          severity: sev,
+        });
+      }
+      addEdge(uid, hubId, `${sev} risk`, sev);
+    }
+
+    // Add hub nodes to the node list
+    for (const hub of hubNodes.values()) {
+      nodes.push(hub);
+    }
+
+    return json({ nodes, edges });
+  } catch (err) {
+    // Never crash — return empty graph so the page renders instead of 500
+    return json({ nodes: [], edges: [] });
+  }
 }
 
 // ── History ───────────────────────────────────────────────────────────────────
@@ -417,7 +521,7 @@ export default {
     if (req.method === "GET"  && path === "/api/checks")     return handleChecks(url, env);
     if (req.method === "GET"  && path === "/api/services")   return handleServices(url, env);
     if (req.method === "GET"  && path === "/api/compliance") return handleCompliance(env);
-    if (req.method === "GET"  && path === "/api/graph")      return handleGraph(url, env);
+    if (req.method === "GET"  && path === "/api/graph")      return handleGraph(env);
     if (req.method === "GET"  && path === "/api/history")    return handleHistory(url, env);
 
     return json({ error: "Not found" }, 404);

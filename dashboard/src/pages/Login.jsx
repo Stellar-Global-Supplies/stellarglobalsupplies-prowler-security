@@ -44,7 +44,6 @@ const s = {
 }
 
 export default function Login() {
-  const [mode, setMode]       = useState('login') // 'login' | 'signup'
   const [email, setEmail]     = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -53,9 +52,7 @@ export default function Login() {
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true); setError('')
-    const { error: err } = mode === 'login'
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password })
+    const { error: err } = await supabase.auth.signInWithPassword({ email, password })
     if (err) setError(err.message)
     setLoading(false)
   }
@@ -78,7 +75,7 @@ export default function Login() {
           </div>
         </div>
         <p style={s.sub}>
-          {mode === 'login' ? 'Sign in to Stellar Security View' : 'Create your account'}
+          Sign in to Stellar Security View
         </p>
 
         {error && <div style={s.error}>{error}</div>}
@@ -101,7 +98,7 @@ export default function Login() {
             onBlur={e => e.target.style.borderColor = 'var(--border2)'}
           />
           <button style={s.btn} disabled={loading}>
-            {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+            {loading ? 'Please wait…' : 'Sign in'}
           </button>
         </form>
 
@@ -112,14 +109,6 @@ export default function Login() {
         <button style={s.oauthBtn} onClick={handleGitHub}>
           <GitHubIcon /> Continue with GitHub
         </button>
-
-        <div style={s.toggle}>
-          {mode === 'login' ? (
-            <>No account? <span style={s.link} onClick={() => setMode('signup')}>Sign up</span></>
-          ) : (
-            <>Have an account? <span style={s.link} onClick={() => setMode('login')}>Sign in</span></>
-          )}
-        </div>
       </div>
     </div>
   )
