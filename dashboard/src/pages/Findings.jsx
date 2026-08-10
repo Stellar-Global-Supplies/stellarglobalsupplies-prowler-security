@@ -19,11 +19,24 @@ export default function Findings() {
   const [loading, setLoading]     = useState(true)
   const [expanded, setExpanded]   = useState(null)
   const [page, setPage]           = useState(1)
+  const [providers, setProviders] = useState([])
+  const [loadingProviders, setLoadingProviders] = useState(true)
 
   const severity = params.get('severity') ?? ''
   const status   = params.get('status')   ?? 'FAIL'
   const provider = params.get('provider') ?? ''
   const q        = params.get('q')        ?? ''
+
+  // Fetch available providers
+  useEffect(() => {
+    api.score()
+      .then(data => {
+        const providerList = Object.keys(data.by_provider || {}).sort()
+        setProviders(providerList)
+      })
+      .catch(() => {})
+      .finally(() => setLoadingProviders(false))
+  }, [])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -76,9 +89,11 @@ export default function Findings() {
         </FilterSelect>
 
         {/* Provider */}
-        <FilterSelect value={provider} onChange={v => setFilter('provider', v)} placeholder="All providers">
-          <option value="aws">AWS</option>
-          <option value="cloudflare">Cloudflare</option>
+        <FilterSelect value={provider} onChange={v => setFilter('provider', v)} placeholder="All providers" disabled={loadingProviders}>
+          <option value="">All providers</option>
+          {providers.map(p => (
+            <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+          ))}
         </FilterSelect>
 
         {/* Clear */}

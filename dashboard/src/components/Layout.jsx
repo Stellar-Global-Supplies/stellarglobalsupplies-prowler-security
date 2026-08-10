@@ -1,5 +1,7 @@
 import { useLocation, useNavigate, Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 
 const NAV = [
   { path: '/',             label: 'Overview',     icon: HomeIcon },
@@ -7,9 +9,26 @@ const NAV = [
   { path: '/attack-graph', label: 'Attack Graph', icon: GraphIcon },
 ]
 
+const PROVIDER_COLORS = {
+  aws: '#f97316',
+  cloudflare: '#f6821f',
+  neon: '#8b5cf6',
+  supabase: '#3ecf8e',
+}
+
 export default function Layout({ children }) {
   const loc = useLocation()
   const navigate = useNavigate()
+  const [providers, setProviders] = useState([])
+
+  useEffect(() => {
+    api.score()
+      .then(data => {
+        const list = Object.keys(data.by_provider || {}).sort()
+        setProviders(list)
+      })
+      .catch(() => {})
+  }, [])
 
   async function signOut() {
     await supabase.auth.signOut()
@@ -39,8 +58,19 @@ export default function Layout({ children }) {
         <div style={{ padding:'16px 20px', borderBottom:'1px solid var(--border)' }}>
           <div style={{ fontSize:11, fontWeight:500, color:'var(--muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>Providers</div>
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            <ProviderBadge label="AWS" color="#f97316" />
-            <ProviderBadge label="Cloudflare" color="#f6821f" />
+            {providers.length === 0 && (
+              <>
+                <ProviderBadge label="AWS" color="#f97316" />
+                <ProviderBadge label="Cloudflare" color="#f6821f" />
+              </>
+            )}
+            {providers.map(p => (
+              <ProviderBadge
+                key={p}
+                label={p.charAt(0).toUpperCase() + p.slice(1)}
+                color={PROVIDER_COLORS[p] || '#64748b'}
+              />
+            ))}
           </div>
         </div>
 
