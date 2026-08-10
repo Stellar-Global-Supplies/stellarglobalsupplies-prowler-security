@@ -72,6 +72,68 @@ jobs:
             echo "No results file found for ${{ matrix.service }}"
           fi
 
+  scan-neon:
+    name: Scan NeonDB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run NeonDB Security Scan
+        id: neon_scan
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          python3 scripts/scan_neon.py 2>&1 | tee /tmp/neon-scan.log
+        continue-on-error: true
+
+      - name: Push NeonDB findings to D1
+        if: always()
+        env:
+          INGEST_URL: ${{ secrets.CF_WORKER_INGEST_URL }}
+          INGEST_TOKEN: ${{ secrets.CF_WORKER_INGEST_TOKEN }}
+        run: |
+          if [ -f ./output/neon-findings.results.json ]; then
+            python3 scripts/parse_and_push.py \
+              --file ./output/neon-findings.results.json \
+              --provider neon \
+              --url "$INGEST_URL" \
+              --token "$INGEST_TOKEN"
+          else
+            echo "No NeonDB results file found"
+          fi
+
+  scan-supabase:
+    name: Scan Supabase
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Supabase Security Scan
+        id: supabase_scan
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_API_KEY: ${{ secrets.SUPABASE_API_KEY }}
+        run: |
+          python3 scripts/scan_supabase.py 2>&1 | tee /tmp/supabase-scan.log
+        continue-on-error: true
+
+      - name: Push Supabase findings to D1
+        if: always()
+        env:
+          INGEST_URL: ${{ secrets.CF_WORKER_INGEST_URL }}
+          INGEST_TOKEN: ${{ secrets.CF_WORKER_INGEST_TOKEN }}
+        run: |
+          if [ -f ./output/supabase-findings.results.json ]; then
+            python3 scripts/parse_and_push.py \
+              --file ./output/supabase-findings.results.json \
+              --provider supabase \
+              --url "$INGEST_URL" \
+              --token "$INGEST_TOKEN"
+          else
+            echo "No Supabase results file found"
+          fi
+
   scan-cloudflare:
     name: Scan Cloudflare
     runs-on: ubuntu-latest
