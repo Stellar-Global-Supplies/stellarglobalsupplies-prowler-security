@@ -324,6 +324,157 @@ def parse_ocsf(filepath: str, provider: str):
     return scan, parsed, list(resources.values()), []
 
 
+def parse_compliance_csv(output_dir: str, provider: str):
+    """Parse Prowler compliance CSV reports as a fallback data source.
+
+    Prowler always generates compliance output (``<output_dir>/compliance/``)
+    when findings exist, even when the ``json-results`` exporter fails to
+    write (e.g. the patch wasn't applied to the installed Prowler version).
+    This parser reads those CSVs so the dashboard still receives findings.
+
+    Compliance CSVs are semicolon-delimited with UPPERCASE headers.  Each row
+    is a *requirement* (not a per-check finding), so we map:
+
+        PROVIDER                 -> provider
+        DESCRIPTION              -> check_title
+        ACCOUNTID / SUBSCRIPTIONID / ... -> account_uid
+        REGION / LOCATION        -> region
+        ASSESSMENTDATE           -> scanned_at
+        REQUIREMENTS_ID          -> check_id
+        REQUIREMENTS_DESCRIPTION -> description
+
+    Rows are deduplicated across frameworks by (check_id, account_uid, region).
+    Status defaults to FAIL and severity to low because compliance rows
+    represent requirements that need attention (no per-check status/severity
+    is available in this format).
+
+    Returns (scan, findings, resources, edges) — same shape as the other
+    parsers.  If no compliance files are found, returns a zero-finding scan.
+    """
+    import csv
+    import glob
+    import os
+
+    compliance_dir = os.path.join(output_dir, "compliance")
+    if not os.path.isdir(compliance_dir):
+        print(f"[warn] No compliance directory at {compliance_dir} — no fallback data.")
+        return _empty_scan(provider), [], [], []
+
+    # Match provider-specific files, e.g. cis_5.0_aws.csv, soc2_aws.csv
+    pattern = os.path.join(compliance_dir, f"*_{provider}.csv")
+    files = sorted(glob.glob(pattern))
+    if not files:
+        # Fall back to any CSV in the dir (some frameworks omit the provider suffix)
+        files = sorted(glob.glob(os.path.join(compliance_dir, "*.csv")))
+
+    if not files:
+        print(f"[warn] No compliance CSV files found in {compliance_dir} — no fallback data.")
+        return _empty_scan(provider), [], [], []
+
+    print(f"[info] Compliance fallback: found {len(files)} CSV file(s) in {compliance_dir}")
+
+    scan_id = str(uuid.uuid4())
+    parsed = []
+    resources = {}
+    counts = {
+        "total": 0, "passed": 0, "failed": 0,
+        "critical": 0, "high": 0, "medium": 0, "low": 0,
+    }
+    seen = set()
+
+    for filepath in files:
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                reader = csv.DictReader(f, delimiter=";")
+                rows = list(reader)
+        except Exception as e:
+            print(f"[warn] Could not read {filepath}: {e}")
+            continue
+
+        for row in rows:
+            # Normalise keys to UPPERCASE (DictReader preserves header case)
+            r = {k.upper(): v for k, v in row.items() if k}
+
+            check_id = (r.get("REQUIREMENTS_ID") or "").strip()
+            if not check_id:
+                continue
+
+            account_uid = (
+                r.get("ACCOUNTID") or r.get("SUBSCRIPTIONID")
+                or r.get("PROJECTID") or r.get("TENANTID")
+                or r.get("ACCOUNT_NAME") or ""
+            ).strip()
+            region = (r.get("REGION") or r.get("LOCATION") or "global").strip()
+            check_title = (r.get("DESCRIPTION") or check_id).strip()
+            description = (r.get("REQUIREMENTS_DESCRIPTION") or "").strip()
+            scanned_at = (r.get("ASSESSMENTDATE") or "").strip() or datetime.now(timezone.utc).isoformat()
+
+            # Dedupe across frameworks: same check + account + region
+            dedupe_key = (check_id, account_uid, region)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+
+            # Compliance rows are requirements needing attention -> FAIL / low
+            status = "FAIL"
+            sev = "low"
+
+            parsed.append({
+                "id": str(uuid.uuid4()),
+                "scan_run_id": scan_id,
+                "provider": provider,
+                "service": "",
+                "check_id": check_id,
+                "check_title": check_title,
+                "status": status,
+                "severity": sev,
+                "resource_uid": account_uid,
+                "resource_name": account_uid or check_id,
+                "resource_type": "",
+                "region": region,
+                "description": description,
+                "remediation": "",
+                "scanned_at": scanned_at,
+            })
+
+            counts["total"] += 1
+            counts["failed"] += 1
+            counts["low"] += 1
+
+            if account_uid:
+                rid = f"{provider}:compliance:{account_uid}"
+                if rid not in resources:
+                    resources[rid] = {
+                        "id": rid,
+                        "provider": provider,
+                        "service": "compliance",
+                        "resource_uid": account_uid,
+                        "resource_name": account_uid,
+                        "resource_type": "ComplianceRequirement",
+                        "region": region,
+                        "risk_score": SEVERITY_MAP.get(sev, 0),
+                    }
+
+    if counts["total"] == 0:
+        print("[warn] Compliance CSVs contained no parseable rows — recording zero-finding scan.")
+        return _empty_scan(provider), [], [], []
+
+    scan = {
+        "id": scan_id,
+        "provider": provider,
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "score": 0.0,
+        "checks_executed": counts["total"],
+        **counts,
+    }
+
+    print(
+        f"[info] Compliance fallback: {counts['total']} requirement(s) parsed "
+        f"from {len(files)} CSV file(s)"
+    )
+    return scan, parsed, list(resources.values()), []
+
+
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
@@ -453,6 +604,24 @@ def main():
 
     if fmt == "json-results":
         scan, findings, resources, edges = parse_json_results(a.file, a.provider)
+        # Fallback: if the json-results file was empty/missing but Prowler
+        # actually produced findings, the compliance reports in
+        # <output_dir>/compliance/ still contain them.  Parse those so the
+        # dashboard receives data instead of a zero-finding scan.
+        if scan.get("total", 0) == 0:
+            import os
+            output_dir = os.path.dirname(os.path.abspath(a.file))
+            fallback_scan, fallback_findings, fallback_resources, fallback_edges = (
+                parse_compliance_csv(output_dir, a.provider)
+            )
+            if fallback_scan.get("total", 0) > 0:
+                print(
+                    f"[info] Using compliance fallback: {fallback_scan['total']} "
+                    f"requirement(s) recovered from {output_dir}/compliance/"
+                )
+                scan, findings, resources, edges = (
+                    fallback_scan, fallback_findings, fallback_resources, fallback_edges
+                )
     else:
         scan, findings, resources, edges = parse_ocsf(a.file, a.provider)
 
