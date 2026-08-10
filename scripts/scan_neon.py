@@ -48,26 +48,36 @@ def get_neon_project_id() -> Optional[str]:
 
 def neon_api_request(api_key: str, endpoint: str, method: str = "GET") -> Dict[str, Any]:
     """Make authenticated request to NeonDB API."""
-    url = f"https://console.neon.tech/api/v2/{endpoint}"
-    req = urllib.request.Request(
-        url,
-        data=None,
-        method=method,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            return json.loads(response.read().decode())
-    except urllib.error.HTTPError as e:
-        print(f"[warn] NeonDB API error: {e.code} - {e.reason}")
-        return {}
-    except Exception as e:
-        print(f"[warn] NeonDB API request failed: {e}")
-        return {}
+    # Try v2 API first, fallback to v1 if needed
+    urls_to_try = [
+        f"https://console.neon.tech/api/v2/{endpoint}",
+        f"https://api.neon.tech/v2/{endpoint}",
+    ]
+    
+    for url in urls_to_try:
+        req = urllib.request.Request(
+            url,
+            data=None,
+            method=method,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                continue  # Try next URL
+            print(f"[warn] NeonDB API error: {e.code} - {e.reason} for {url}")
+            return {}
+        except Exception as e:
+            continue
+    
+    print(f"[warn] All NeonDB API endpoints failed for: {endpoint}")
+    return {}
 
 
 def check_encryption_at_rest(api_key: str, project_id: str) -> Dict[str, Any]:

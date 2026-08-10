@@ -51,7 +51,40 @@ def get_supabase_api_key() -> str:
 
 
 def supabase_api_request(url: str, api_key: str, endpoint: str, method: str = "GET") -> Dict[str, Any]:
-    """Make authenticated request to Supabase API."""
+    """Make authenticated request to Supabase Management API."""
+    # Use Management API for admin operations
+    # Extract project ref from URL (e.g., https://xxx.supabase.co -> xxx)
+    project_ref = url.replace("https://", "").replace("http://", "").split(".")[0]
+    
+    # Try Management API first (for admin operations)
+    mgmt_url = f"https://api.supabase.com/v1/projects/{project_ref}/{endpoint}"
+    
+    req = urllib.request.Request(
+        mgmt_url,
+        data=None,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return json.loads(response.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            # Fallback to REST API for some endpoints
+            return supabase_rest_api_request(url, api_key, endpoint, method)
+        print(f"[warn] Supabase Management API error: {e.code} - {e.reason}")
+        return {}
+    except Exception as e:
+        print(f"[warn] Supabase API request failed: {e}")
+        return {}
+
+
+def supabase_rest_api_request(url: str, api_key: str, endpoint: str, method: str = "GET") -> Dict[str, Any]:
+    """Fallback to REST API for certain operations."""
     full_url = f"{url}/rest/v1/{endpoint}"
     req = urllib.request.Request(
         full_url,
@@ -68,10 +101,10 @@ def supabase_api_request(url: str, api_key: str, endpoint: str, method: str = "G
         with urllib.request.urlopen(req, timeout=30) as response:
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as e:
-        print(f"[warn] Supabase API error: {e.code} - {e.reason}")
+        print(f"[warn] Supabase REST API error: {e.code} - {e.reason}")
         return {}
     except Exception as e:
-        print(f"[warn] Supabase API request failed: {e}")
+        print(f"[warn] Supabase REST API request failed: {e}")
         return {}
 
 
