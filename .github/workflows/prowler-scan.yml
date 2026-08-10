@@ -12,6 +12,20 @@ jobs:
     permissions:
       id-token: write   # Required for OIDC authentication
       contents: read
+    strategy:
+      fail-fast: false  # Continue scanning other services if one fails
+      matrix:
+        service:
+          - iam
+          - s3
+          - lambda
+          - rds
+          - cloudwatch
+          - cloudwatchlogs
+          - stepfunctions
+          - cloudfront
+          - route53
+          - acm
     steps:
       - uses: actions/checkout@v4
 
@@ -27,33 +41,36 @@ jobs:
       - name: Apply json-results patch
         run: python3 prowler_patches/apply_patch.py
 
-      - name: Run Prowler on AWS
+      - name: Run Prowler on AWS - ${{ matrix.service }}
         id: prowler_aws
         run: |
+          echo "Scanning ${{ matrix.service }}..."
           prowler aws \
             --output-formats json-results \
             --output-directory ./output \
-            --output-filename aws-findings \
-            --service iam --service s3 --service lambda --service rds \
-            --service cloudwatch --service cloudwatchlogs --service stepfunctions \
-            --service cloudfront --service route53 --service acm \
-            --ignore-exit-code-3 2>&1 | tee /tmp/prowler-aws.log
-          CHECKS=$(grep -oP 'Executing \K[0-9]+(?= checks)' /tmp/prowler-aws.log | tail -1 || echo "0")
+            --output-filename aws-findings-${{ matrix.service }} \
+            --service ${{ matrix.service }} \
+            --ignore-exit-code-3 2>&1 | tee /tmp/prowler-aws-${{ matrix.service }}.log
+          CHECKS=$(grep -oP 'Executing \K[0-9]+(?= checks)' /tmp/prowler-aws-${{ matrix.service }}.log | tail -1 || echo "0")
           echo "checks_executed=${CHECKS}" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
-      - name: Push AWS findings to D1
+      - name: Push AWS findings to D1 - ${{ matrix.service }}
         if: always()
         env:
           INGEST_URL: ${{ secrets.CF_WORKER_INGEST_URL }}
           INGEST_TOKEN: ${{ secrets.CF_WORKER_INGEST_TOKEN }}
         run: |
-          python3 scripts/parse_and_push.py \
-            --file ./output/aws-findings.results.json \
-            --provider aws \
-            --checks-executed "${{ steps.prowler_aws.outputs.checks_executed }}" \
-            --url "$INGEST_URL" \
-            --token "$INGEST_TOKEN"
+          if [ -f ./output/aws-findings-${{ matrix.service }}.results.json ]; then
+            python3 scripts/parse_and_push.py \
+              --file ./output/aws-findings-${{ matrix.service }}.results.json \
+              --provider aws \
+              --checks-executed "${{ steps.prowler_aws.outputs.checks_executed }}" \
+              --url "$INGEST_URL" \
+              --token "$INGEST_TOKEN"
+          else
+            echo "No results file found for ${{ matrix.service }}"
+          fi
 
   scan-cloudflare:
     name: Scan Cloudflare
