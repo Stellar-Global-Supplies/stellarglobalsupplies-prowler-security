@@ -10,7 +10,7 @@ GitHub Actions (hourly, public repo — unlimited free minutes)
     ↓  Prowler scans AWS + Cloudflare
     ↓  parse_and_push.py parses JSON → pushes findings
     ↓
-CF Worker API (prowler-api.yourname.workers.dev)
+CF Worker API (prowler-api.workwithprasadbhavsar.workers.dev)
     ↓  writes to
 CF D1 Database (prowler-db)
     ↑  reads from
@@ -42,7 +42,7 @@ npx wrangler secrets-store secret create <STORE_ID> --name CF_API_TOKEN --scopes
 
 # Deploy
 wrangler deploy
-# Note the URL: https://prowler-api.yourname.workers.dev
+# Note the URL: https://prowler-api.workwithprasadbhavsar.workers.dev
 ```
 
 ### 3. Deploy the Dashboard to CF Pages
@@ -62,7 +62,7 @@ In Cloudflare Pages → New Project → Connect GitHub repo:
 |-----|-------|
 | `VITE_SUPABASE_URL` | Your Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Your Supabase anon key |
-| `VITE_API_URL` | `https://prowler-api.yourname.workers.dev` |
+| `VITE_API_URL` | `https://prowler-api.workwithprasadbhavsar.workers.dev` |
 
 ### 4. Custom domain
 
@@ -85,7 +85,7 @@ Add these secrets to your GitHub repo (Settings → Secrets → Actions):
 | `AWS_ROLE_ARN` | IAM role ARN with OIDC trust (replaces access keys) |
 | `CLOUDFLARE_API_TOKEN` | CF API token (read permissions only) |
 | `CLOUDFLARE_ACCOUNT_ID` | Your CF account ID |
-| `CF_WORKER_INGEST_URL` | `https://prowler-api.yourname.workers.dev/ingest` |
+| `CF_WORKER_INGEST_URL` | `https://prowler-api.workwithprasadbhavsar.workers.dev/ingest` |
 | `CF_WORKER_INGEST_TOKEN` | Same token as the `CF_API_TOKEN` secret in your Secrets Store |
 
 ### 7. Set up AWS OIDC IAM role
