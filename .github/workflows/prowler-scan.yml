@@ -34,6 +34,7 @@ jobs:
             --output-formats json-results \
             --output-directory ./output \
             --output-filename aws-findings \
+            --only-regions us-east-1,ap-south-1 \
             --ignore-exit-code-3 2>&1 | tee /tmp/prowler-aws.log
           CHECKS=$(grep -oP 'Executing \K[0-9]+(?= checks)' /tmp/prowler-aws.log | tail -1 || echo "0")
           echo "checks_executed=${CHECKS}" >> "$GITHUB_OUTPUT"

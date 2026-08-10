@@ -324,6 +324,103 @@ def parse_ocsf(filepath: str, provider: str):
     return scan, parsed, list(resources.values()), []
 
 
+# Mapping of check_id prefixes to AWS service names for the compliance fallback
+# parser.  Compliance CSVs don't include a service column, so we infer it from
+# the check_id prefix (e.g. ``iam_`` -> ``iam``, ``s3_`` -> ``s3``).
+_CHECK_ID_SERVICE_MAP = {
+    "iam_": "iam",
+    "s3_": "s3",
+    "ec2_": "ec2",
+    "rds_": "rds",
+    "lambda_": "lambda",
+    "vpc_": "vpc",
+    "cloudtrail_": "cloudtrail",
+    "cloudwatch_": "cloudwatch",
+    "kms_": "kms",
+    "dynamodb_": "dynamodb",
+    "eks_": "eks",
+    "redshift_": "redshift",
+    "elasticache_": "elasticache",
+    "sns_": "sns",
+    "sqs_": "sqs",
+    "guardduty_": "guardduty",
+    "securityhub_": "securityhub",
+    "config_": "config",
+    "ssm_": "ssm",
+    "organizations_": "organizations",
+    "account_": "account",
+    "route53_": "route53",
+    "acm_": "acm",
+    "waf_": "waf",
+    "shield_": "shield",
+    "athena_": "athena",
+    "backup_": "backup",
+    "batch_": "batch",
+    "cognito_": "cognito",
+    "directconnect_": "directconnect",
+    "ecr_": "ecr",
+    "ecs_": "ecs",
+    "efs_": "efs",
+    "elasticsearch_": "elasticsearch",
+    "emr_": "emr",
+    "glacier_": "glacier",
+    "glue_": "glue",
+    "kinesis_": "kinesis",
+    "opensearch_": "opensearch",
+    "qldb_": "qldb",
+    "rds_": "rds",
+    "redshift_": "redshift",
+    "sagemaker_": "sagemaker",
+    "ses_": "ses",
+    "stepfunctions_": "stepfunctions",
+    "storagegateway_": "storagegateway",
+}
+
+# Best-effort severity mapping for compliance fallback.  Compliance CSVs don't
+# include severity, so we infer it from common check_id patterns.  This is not
+# perfect — the real fix is to get the json-results exporter working.
+_SEVERITY_BY_CHECK_PATTERN = {
+    "mfa": "high",
+    "password": "medium",
+    "public": "high",
+    "encrypt": "medium",
+    "logging": "medium",
+    "monitoring": "low",
+    "backup": "medium",
+    "patch": "high",
+    "vulnerab": "high",
+    "root": "critical",
+    "privilege": "high",
+    "network": "medium",
+    "firewall": "medium",
+    "access": "medium",
+    "exposed": "critical",
+    "bucket": "high",
+    "security_group": "high",
+    "iam": "high",
+    "unrestricted": "critical",
+    "default": "medium",
+}
+
+
+def _infer_service(check_id: str) -> str:
+    """Infer AWS service name from a Prowler check_id prefix."""
+    cid = check_id.lower()
+    for prefix, svc in _CHECK_ID_SERVICE_MAP.items():
+        if cid.startswith(prefix):
+            return svc
+    return ""
+
+
+def _infer_severity(check_id: str, check_title: str) -> str:
+    """Best-effort severity inference from check_id / check_title keywords."""
+    text = f"{check_id} {check_title}".lower()
+    for keyword, sev in _SEVERITY_BY_CHECK_PATTERN.items():
+        if keyword in text:
+            return sev
+    return "low"
+
+
 def parse_compliance_csv(output_dir: str, provider: str):
     """Parse Prowler compliance CSV reports as a fallback data source.
 
@@ -344,9 +441,9 @@ def parse_compliance_csv(output_dir: str, provider: str):
         REQUIREMENTS_DESCRIPTION -> description
 
     Rows are deduplicated across frameworks by (check_id, account_uid, region).
-    Status defaults to FAIL and severity to low because compliance rows
-    represent requirements that need attention (no per-check status/severity
-    is available in this format).
+    Status defaults to FAIL because compliance rows represent requirements that
+    need attention.  Severity is inferred from check_id / check_title keywords
+    (best-effort — the real fix is to get the json-results exporter working).
 
     Returns (scan, findings, resources, edges) — same shape as the other
     parsers.  If no compliance files are found, returns a zero-finding scan.
@@ -409,21 +506,26 @@ def parse_compliance_csv(output_dir: str, provider: str):
             description = (r.get("REQUIREMENTS_DESCRIPTION") or "").strip()
             scanned_at = (r.get("ASSESSMENTDATE") or "").strip() or datetime.now(timezone.utc).isoformat()
 
+            # Infer service from check_id prefix (e.g. iam_ -> iam)
+            service = _infer_service(check_id)
+
+            # Best-effort severity from check_id / check_title keywords
+            sev = _infer_severity(check_id, check_title)
+
             # Dedupe across frameworks: same check + account + region
             dedupe_key = (check_id, account_uid, region)
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
 
-            # Compliance rows are requirements needing attention -> FAIL / low
+            # Compliance rows are requirements needing attention -> FAIL
             status = "FAIL"
-            sev = "low"
 
             parsed.append({
                 "id": str(uuid.uuid4()),
                 "scan_run_id": scan_id,
                 "provider": provider,
-                "service": "",
+                "service": service,
                 "check_id": check_id,
                 "check_title": check_title,
                 "status": status,
@@ -439,7 +541,7 @@ def parse_compliance_csv(output_dir: str, provider: str):
 
             counts["total"] += 1
             counts["failed"] += 1
-            counts["low"] += 1
+            counts[sev] = counts.get(sev, 0) + 1
 
             if account_uid:
                 rid = f"{provider}:compliance:{account_uid}"
@@ -447,7 +549,7 @@ def parse_compliance_csv(output_dir: str, provider: str):
                     resources[rid] = {
                         "id": rid,
                         "provider": provider,
-                        "service": "compliance",
+                        "service": service or "compliance",
                         "resource_uid": account_uid,
                         "resource_name": account_uid,
                         "resource_type": "ComplianceRequirement",
