@@ -52,37 +52,65 @@ class JSONResults(Output):
     """
 
     # ------------------------------------------------------------------
-    # Init — override to always open the file, even with zero findings.
-    #
-    # The base Output.__init__ only calls transform() and creates the file
-    # descriptor when ``findings`` is non-empty (line: ``if findings:``).
-    # That means a clean scan (all checks pass, no failures) produces *no*
-    # output file, so the downstream parse_and_push.py never receives real
-    # data and the dashboard stays empty.
-    #
-    # We fix this by calling create_file_descriptor() ourselves whenever
-    # the parent skipped it, ensuring the file always exists after init.
+    # Init  (overridden so the file is ALWAYS created, even with zero
+    # findings — the parent Output.__init__ skips transform and file
+    # creation when the findings list is falsy, which would leave the
+    # output file empty/absent for no-resource scans).
     # ------------------------------------------------------------------
 
     def __init__(
         self,
-        findings,
-        file_path=None,
-        file_extension="",
-        from_cli=True,
-    ):
-        super().__init__(
-            findings=findings,
-            file_path=file_path,
-            file_extension=file_extension,
-            from_cli=from_cli,
-        )
-        # Parent skipped file creation when findings was empty; open it now.
+        findings: List[Finding],
+        file_path: Optional[str] = None,
+        file_extension: str = "",
+        from_cli: bool = True,
+    ) -> None:
+        """Initialise the exporter and always create the output file.
+
+        Unlike the parent ``Output.__init__`` (which returns early when
+        ``findings`` is falsy), this override always:
+
+        * runs ``transform`` (a no-op for an empty list), and
+        * creates the file descriptor.
+
+        This guarantees ``batch_write_data_to_file`` always has a valid
+        file handle to write to, so a zero-resource scan still produces a
+        parseable ``{"schema_version": ..., "total": 0, "results": []}``
+        envelope instead of a 0-byte / missing file.
+
+        Parameters
+        ----------
+        findings:
+            List of ``Finding`` objects (may be empty).
+        file_path:
+            Path to the output file.
+        file_extension:
+            Optional file-extension override.
+        from_cli:
+            Whether the exporter is invoked from the CLI.
+        """
+        self._data: List[Dict[str, Any]] = []
+        self.close_file = False
+        self.file_path = file_path
+        self._file_descriptor = None
+        self._from_cli = from_cli
+
+        if not file_extension and file_path:
+            from pathlib import Path
+
+            self._file_extension = "".join(Path(file_path).suffixes)
+        if file_extension:
+            self._file_extension = file_extension
+            self.file_path = f"{file_path}{self.file_extension}"
+
+        # Always transform — even when findings is empty — so the output
+        # file is always generated.
+        self.transform(findings)
         if not self._file_descriptor and file_path:
-            self.create_file_descriptor(file_path)
+            self.create_file_descriptor(self.file_path)
 
     # ------------------------------------------------------------------
-    # Transform  (called once by Output.__init__ when findings are present)
+    # Transform  (called by __init__)
     # ------------------------------------------------------------------
 
     def transform(self, findings: List[Finding]) -> None:

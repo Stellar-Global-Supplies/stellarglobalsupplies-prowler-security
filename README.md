@@ -120,24 +120,58 @@ The workflow uses **OIDC** to authenticate with AWS (no long-lived access keys n
 }
 ```
 
-3. Attach this read-only policy to the role:
+3. Attach a read-only policy to the role. **Use AWS-managed `ReadOnlyAccess`**
+   (or `SecurityAudit`) — a hand-curated list of a dozen permissions is *not*
+   enough.  Prowler runs ~630 checks across dozens of services (EC2, IAM,
+   Lambda, RDS, S3, Config, GuardDuty, …).  If the role only has a few
+   `Describe`/`List` permissions, every check still *executes* but returns
+   **0 resources**, producing an empty scan:
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": [
-      "s3:GetBucketAcl", "s3:GetBucketPolicy", "s3:GetBucketPublicAccessBlock",
-      "s3:GetEncryptionConfiguration", "s3:GetBucketVersioning", "s3:ListAllMyBuckets",
-      "route53:ListHostedZones", "route53:GetHostedZone", "route53:ListResourceRecordSets",
-      "iam:GetAccountPasswordPolicy", "iam:GetAccountSummary",
-      "cloudtrail:DescribeTrails", "cloudtrail:GetTrailStatus"
-    ],
-    "Resource": "*"
-  }]
-}
-```
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{
+       "Effect": "Allow",
+       "Action": "ReadOnlyAccess",
+       "Resource": "*"
+     }]
+   }
+   ```
+
+   Replace the `Action` above with the ARN of the managed policy if you
+   attach it via the AWS console instead:
+
+   `arn:aws:iam::aws:policy/ReadOnlyAccess`
+
+   The **minimum viable policy** if you cannot use `ReadOnlyAccess`
+   (covers the services Prowler scans most commonly):
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": [
+           "acm:Describe*", "acm:List*", "access-analyzer:List*", "access-analyzer:Get*",
+           "apigateway:GET", "autoscaling:Describe*", "cloudtrail:DescribeTrails", "cloudtrail:GetTrailStatus", "cloudtrail:ListTrails",
+           "cloudwatch:Describe*", "cloudwatch:Get*", "cloudwatch:List*",
+           "config:Describe*", "config:List*", "config:Get*",
+           "ec2:Describe*", "ecr:Describe*", "ecr:List*", "ecs:Describe*", "ecs:List*",
+           "eks:Describe*", "eks:List*", "elasticloadbalancing:Describe*",
+           "guardduty:List*", "guardduty:Get*", "iam:Get*", "iam:List*",
+           "kms:Describe*", "kms:Get*", "kms:List*",
+           "lambda:Get*", "lambda:List*", "logs:Describe*", "logs:Get*", "logs:List*",
+           "rds:Describe*", "rds:List*", "route53:List*", "route53:Get*",
+           "s3:Get*", "s3:List*", "sns:Get*", "sns:List*",
+           "sqs:Get*", "sqs:List*", "sts:GetCallerIdentity",
+           "waf:List*", "waf:Get*", "wafv2:List*", "wafv2:Get*"
+         ],
+         "Resource": "*"
+       }
+     ]
+   }
+   ```
 
 ### 8. Create Cloudflare API token
 
@@ -458,6 +492,33 @@ All 35 tests should pass.
 | `prowler/config/config.py` | Adds `"json-results"` to `available_output_formats` |
 | `prowler/__main__.py` | Imports `JSONResults`; adds dispatch block in the output-format loop |
 | `prowler/lib/outputs/summary_table.py` | Adds file path line in the post-scan summary |
+
+### Zero-resource scans still produce a valid file
+
+The exporter's `__init__` is overridden so the output file descriptor is
+always created, and the `json-results` dispatch block in `__main__.py` is
+injected **outside** Prowler's `if finding_outputs:` guard.  This means a
+no-resource scan (e.g. an AWS role with no permission to enumerate anything)
+still writes:
+
+```json
+{
+  "schema_version": "1.0.0",
+  "total": 0,
+  "results": []
+}
+```
+
+…instead of a 0-byte file.  The downstream `parse_and_push.py` then logs
+`Loaded 0 records` and pushes a zero-finding `scan_run` row so the dashboard
+shows "no resources found" rather than hiding the provider entirely.
+
+### Custom Cloudflare services source path
+
+The custom Cloudflare service packages (`workers`, `pages`, `d1`, `kv`) are
+tracked in the repo root at `prowler/providers/cloudflare/services/`.  The
+patch script resolves this path relative to `prowler_patches/`, so it always
+finds them — no `prowler_patches/prowler/providers/` copy is required.
 
 ### What the patch does NOT touch
 

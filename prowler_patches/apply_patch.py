@@ -108,9 +108,39 @@ _MAIN_SUFFIX_ANCHOR = "from prowler.config.config import ("
 _MAIN_SUFFIX_ANCHOR_END = ")"
 
 # The block we inject into the output-format dispatch loop
-_MAIN_DISPATCH_MARKER = 'if mode == "json-results":'
-_MAIN_DISPATCH_ANCHOR = '            if mode == "sarif":'
+# The json-results dispatch must run UNCONDITIONALLY — even when
+# finding_outputs is empty (zero resources found).  Prowler wraps the
+# output-format loop in ``if finding_outputs:``, so a no-resource scan
+# would otherwise skip our exporter entirely and leave a 0-byte file.
+# We therefore inject the block at the top level, right before the
+# ``push_to_cloud`` handling, instead of inside the per-mode loop.
+#
+# Variable-scope notes (verified against prowler/__main__.py):
+#   * ``filename`` is computed INSIDE the ``for mode in args.output_formats:``
+#     loop, so it is NOT available here — we rebuild the path inline from
+#     ``output_options``.
+#   * ``args.output_formats`` / ``output_options`` / ``finding_outputs`` /
+#     ``generated_outputs`` are all in scope at the ``push_to_cloud`` anchor.
+_MAIN_DISPATCH_MARKER = 'if "json-results" in (args.output_formats or []):'
+_MAIN_DISPATCH_ANCHOR = '    if getattr(args, "push_to_cloud", False):'
 _MAIN_DISPATCH_BLOCK = '''\
+    if "json-results" in (args.output_formats or []):
+        json_results_output = JSONResults(
+            findings=finding_outputs,
+            file_path=(
+                f"{output_options.output_directory}/"
+                f"{output_options.output_filename}.results.json"
+            ),
+        )
+        generated_outputs["regular"].append(json_results_output)
+        json_results_output.batch_write_data_to_file()
+
+'''
+
+# Legacy in-loop dispatch block from older versions of this patch.  If it is
+# present we remove it so the exporter is not instantiated twice (once in the
+# loop, once unconditionally).
+_OLD_DISPATCH_BLOCK = '''\
             if mode == "json-results":
                 json_results_output = JSONResults(
                     findings=finding_outputs,
@@ -145,7 +175,17 @@ def patch_main(prowler_root: Path) -> None:
     else:
         print("  [SKIP] JSONResults import already present in __main__.py")
 
-    # 2b. Add dispatch block
+    # 2b. Remove legacy in-loop dispatch block if present (from a previous
+    #     version of this patch).  Keeping it would instantiate the exporter
+    #     twice — once inside the ``if finding_outputs:`` loop and once in
+    #     our new unconditional block.
+    if _OLD_DISPATCH_BLOCK in text:
+        text = text.replace(_OLD_DISPATCH_BLOCK, "")
+        changed = True
+        print(f"  [OK]   Removed legacy in-loop json-results dispatch block from {main_path}")
+
+    # 2c. Add unconditional dispatch block (runs even with zero findings so
+    #     a no-resource scan still produces a valid JSON envelope).
     if _MAIN_DISPATCH_MARKER not in text:
         if _MAIN_DISPATCH_ANCHOR not in text:
             sys.exit(
@@ -154,7 +194,7 @@ def patch_main(prowler_root: Path) -> None:
             )
         text = text.replace(_MAIN_DISPATCH_ANCHOR, _MAIN_DISPATCH_BLOCK + _MAIN_DISPATCH_ANCHOR)
         changed = True
-        print(f"  [OK]   Added json-results dispatch block in {main_path}")
+        print(f"  [OK]   Added unconditional json-results dispatch block in {main_path}")
     else:
         print("  [SKIP] json-results dispatch block already present in __main__.py")
 
@@ -214,9 +254,22 @@ CUSTOM_SERVICES = ["workers", "pages", "d1", "kv"]
 
 
 def install_custom_cf_services(prowler_root: Path, patch_dir: Path) -> None:
-    """Copy custom Cloudflare service packages into the installed provider."""
+    """Copy custom Cloudflare service packages into the installed provider.
+
+    The custom services live in the repo root ``prowler/providers/cloudflare/
+    services`` (tracked in git).  ``patch_dir`` is ``prowler_patches/``, so we
+    first try the repo-root location (one level up from ``patch_dir``) and
+    fall back to ``prowler_patches/prowler/providers/...`` for backwards
+    compatibility with older layouts.
+    """
     cf_services_dst = prowler_root / "providers" / "cloudflare" / "services"
-    cf_services_src = patch_dir / "prowler" / "providers" / "cloudflare" / "services"
+
+    # Preferred: repo root prowler/providers/cloudflare/services
+    repo_root = patch_dir.parent
+    cf_services_src = repo_root / "prowler" / "providers" / "cloudflare" / "services"
+    if not cf_services_src.exists():
+        # Fallback: prowler_patches/prowler/providers/cloudflare/services
+        cf_services_src = patch_dir / "prowler" / "providers" / "cloudflare" / "services"
 
     if not cf_services_src.exists():
         print(f"  [SKIP] No custom CF services found in {cf_services_src}")
