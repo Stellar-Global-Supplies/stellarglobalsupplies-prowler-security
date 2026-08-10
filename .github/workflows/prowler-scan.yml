@@ -37,7 +37,7 @@ jobs:
             -f us-east-1 -f ap-south-1 \
             --service iam --service s3 --service lambda --service rds \
             --service cloudwatch --service cloudwatchlogs --service stepfunctions \
-            --service cloudfront \
+            --service cloudfront --service route53 --service acm \
             --ignore-exit-code-3 2>&1 | tee /tmp/prowler-aws.log
           CHECKS=$(grep -oP 'Executing \K[0-9]+(?= checks)' /tmp/prowler-aws.log | tail -1 || echo "0")
           echo "checks_executed=${CHECKS}" >> "$GITHUB_OUTPUT"
