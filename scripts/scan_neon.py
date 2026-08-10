@@ -71,7 +71,13 @@ def neon_api_request(api_key: str, endpoint: str, method: str = "GET") -> Dict[s
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 continue  # Try next URL
-            print(f"[warn] NeonDB API error: {e.code} - {e.reason} for {url}")
+            # Read error body for debugging
+            try:
+                error_body = e.read().decode()
+                print(f"[warn] NeonDB API error: {e.code} - {e.reason} for {url}")
+                print(f"[warn] Error details: {error_body[:200]}")
+            except:
+                print(f"[warn] NeonDB API error: {e.code} - {e.reason} for {url}")
             return {}
         except Exception as e:
             continue
