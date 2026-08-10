@@ -94,7 +94,7 @@ export default function Findings() {
       <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, overflow:'hidden' }}>
         {/* Table header */}
         <div style={{
-          display:'grid', gridTemplateColumns:'100px 80px 120px 1fr 140px 90px',
+          display:'grid', gridTemplateColumns:'100px 80px 120px 1fr 160px 90px',
           gap:12, padding:'10px 16px',
           borderBottom:'1px solid var(--border)',
           fontSize:11, fontWeight:600, color:'var(--muted)',
@@ -152,7 +152,7 @@ function FindingRow({ finding: f, expanded, onToggle, isEven }) {
       <div
         onClick={onToggle}
         style={{
-          display:'grid', gridTemplateColumns:'100px 80px 120px 1fr 140px 90px',
+          display:'grid', gridTemplateColumns:'100px 80px 120px 1fr 160px 90px',
           gap:12, padding:'11px 16px',
           borderBottom:'1px solid var(--border)',
           cursor:'pointer', fontSize:13,
@@ -189,9 +189,21 @@ function FindingRow({ finding: f, expanded, onToggle, isEven }) {
         </span>
 
         {/* Resource */}
-        <span style={{ color:'var(--muted)', alignSelf:'center', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:12, fontFamily:'JetBrains Mono, monospace' }}>
-          {f.resource_name || '—'}
-        </span>
+        <div style={{ display:'flex', flexDirection:'column', gap:2, overflow:'hidden' }}>
+          {f.resource_name && (
+            <span style={{ color:'var(--accent)', alignSelf:'flex-start', fontWeight:500, fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+              {f.resource_name}
+            </span>
+          )}
+          {f.resource_uid && f.resource_uid !== f.resource_name && (
+            <span style={{ color:'var(--muted)', alignSelf:'flex-start', fontSize:10, fontFamily:'JetBrains Mono, monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+              {f.resource_uid}
+            </span>
+          )}
+          {!f.resource_name && !f.resource_uid && (
+            <span style={{ color:'var(--muted)', fontSize:11 }}>—</span>
+          )}
+        </div>
 
         {/* Status */}
         <span style={{
@@ -211,7 +223,7 @@ function FindingRow({ finding: f, expanded, onToggle, isEven }) {
           background:`linear-gradient(to right, ${bg}, transparent)`,
           borderLeft:`3px solid ${color}`,
         }}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
             <div>
               <Label>Description</Label>
               <p style={{ fontSize:13, color:'var(--text)', lineHeight:1.6 }}>{f.description || 'No description available.'}</p>
@@ -221,11 +233,23 @@ function FindingRow({ finding: f, expanded, onToggle, isEven }) {
               <p style={{ fontSize:13, color:'var(--text)', lineHeight:1.6 }}>{f.remediation || 'No remediation guidance available.'}</p>
             </div>
           </div>
-          <div style={{ display:'flex', gap:24, marginTop:14, flexWrap:'wrap' }}>
+
+          {/* Resource Details */}
+          <div style={{ background:'var(--surface2)', padding:'12px 16px', borderRadius:8, marginBottom:14, border:'1px solid var(--border)' }}>
+            <Label style={{ marginBottom:8 }}>Affected Resource</Label>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              <Meta label="Resource Name" value={f.resource_name || '—'} mono={!!f.resource_uid} />
+              <Meta label="Resource ID / ARN" value={f.resource_uid || '—'} mono />
+              <Meta label="Resource Type" value={f.resource_type || '—'} />
+              <Meta label="Region" value={f.region || 'global'} />
+            </div>
+          </div>
+
+          <div style={{ display:'flex', gap:24, flexWrap:'wrap' }}>
             <Meta label="Check ID"  value={f.check_id} mono />
-            <Meta label="Region"    value={f.region || 'global'} />
+            <Meta label="Service"   value={f.service} />
+            <Meta label="Provider"  value={f.provider} />
             <Meta label="Scanned"   value={f.scanned_at ? new Date(f.scanned_at).toLocaleString() : '—'} />
-            <Meta label="Resource"  value={f.resource_uid || f.resource_name || '—'} mono />
           </div>
         </div>
       )}

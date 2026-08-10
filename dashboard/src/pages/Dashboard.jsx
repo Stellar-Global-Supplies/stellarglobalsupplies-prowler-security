@@ -280,14 +280,14 @@ function ServicesTable({ services, onNavigate }) {
         <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
           <thead>
             <tr style={{ background:'var(--surface2)' }}>
-              {['Service','Checks','Pass','Fail','Coverage'].map(h => (
+              {['Service','Resources','Checks','Pass','Fail','Coverage'].map(h => (
                 <th key={h} style={{ padding:'8px 14px', textAlign:'left', fontSize:10, fontWeight:600, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.06em', whiteSpace:'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {top.length === 0 && (
-              <tr><td colSpan={5} style={{ padding:'24px', textAlign:'center', color:'var(--muted)' }}>No service data yet</td></tr>
+              <tr><td colSpan={6} style={{ padding:'24px', textAlign:'center', color:'var(--muted)' }}>No service data yet</td></tr>
             )}
             {top.map((svc, i) => {
               const total = (svc.passed ?? 0) + (svc.failed ?? 0)
@@ -299,6 +299,9 @@ function ServicesTable({ services, onNavigate }) {
                   onMouseEnter={e => e.currentTarget.style.background='var(--surface2)'}
                   onMouseLeave={e => e.currentTarget.style.background='transparent'}>
                   <td style={{ padding:'9px 14px', fontFamily:'JetBrains Mono, monospace', color:'var(--accent)' }}>{svc.service || '—'}</td>
+                  <td style={{ padding:'9px 14px', color:'var(--muted)', fontSize:11 }}>
+                    {svc.resource_count ?? 0}
+                  </td>
                   <td style={{ padding:'9px 14px', color:'var(--muted)' }}>{svc.check_count ?? 0}</td>
                   <td style={{ padding:'9px 14px', color:'var(--pass)' }}>{(svc.passed ?? 0).toLocaleString()}</td>
                   <td style={{ padding:'9px 14px', color: svc.failed > 0 ? 'var(--critical)' : 'var(--muted)' }}>

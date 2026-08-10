@@ -713,6 +713,16 @@ def main():
 
     if fmt == "json-results":
         scan, findings, resources, edges = parse_json_results(a.file, a.provider)
+        
+        # Log service breakdown for visibility
+        if findings:
+            service_counts = {}
+            for f in findings:
+                svc = f.get('service', 'unknown')
+                service_counts[svc] = service_counts.get(svc, 0) + 1
+            print(f"[info] Service breakdown:")
+            for svc, count in sorted(service_counts.items(), key=lambda x: x[1], reverse=True):
+                print(f"       {svc}: {count} findings")
         # Fallback: if the json-results file was empty/missing but Prowler
         # actually produced findings, the compliance reports in
         # <output_dir>/compliance/ still contain them.  Parse those so the
