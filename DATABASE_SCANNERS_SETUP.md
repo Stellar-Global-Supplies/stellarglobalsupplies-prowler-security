@@ -65,7 +65,13 @@ You should see parallel jobs running:
 
 ### Option B: Wait for Scheduled Scan
 
-The workflow runs automatically every hour (cron: `0 * * * *`)
+The workflow runs automatically **twice daily** at:
+- **12:00 AM UTC** (midnight)
+- **12:00 PM UTC** (noon)
+
+Cron schedule: `0 0,12 * * *`
+
+This provides regular security scanning while conserving GitHub Actions minutes for private repositories.
 
 ## Step 4: Monitor Scan Results
 

@@ -98,13 +98,20 @@ If a service shows 0 resources, it means:
 
 ## Scan Configuration
 
-The workflow is already configured to scan all required services:
+The workflow is configured to scan all required services:
 
 ```yaml
-# .github/workflows/prowler-scan.yml (lines 38-40)
+# .github/workflows/prowler-scan.yml
 --service iam --service s3 --service lambda --service rds \
 --service cloudwatch --service cloudwatchlogs --service stepfunctions \
 --service cloudfront --service route53 --service acm
+```
+
+**Scan Schedule:** Twice daily at 12 AM and 12 PM UTC
+```yaml
+on:
+  schedule:
+    - cron: '0 0,12 * * *'   # Twice daily
 ```
 
 ### Why Only ACM Might Show Findings

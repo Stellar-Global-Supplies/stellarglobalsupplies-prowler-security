@@ -2,7 +2,7 @@ name: Prowler Security Scan
 
 on:
   schedule:
-    - cron: '0 * * * *'   # Every hour
+    - cron: '0 0,12 * * *'   # Twice daily at 12 AM and 12 PM UTC
   workflow_dispatch:        # Allow manual trigger from GitHub UI
 
 jobs:
