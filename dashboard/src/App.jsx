@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
-import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import Findings from './pages/Findings'
+import Dashboard  from './pages/Dashboard'
+import Findings   from './pages/Findings'
 import AttackGraph from './pages/AttackGraph'
-import Layout from './components/Layout'
+import Layout     from './components/Layout'
+import Login      from './pages/Login'
+import SSOCallback from './components/SSOCallback'
+
+const LANDING_URL = import.meta.env.VITE_LANDING_URL || 'https://apps.stellarglobalsupplies.com'
 
 export default function App() {
-  const [session, setSession] = useState(undefined) // undefined = loading
+  const [session, setSession] = useState(undefined)
+
+  // ✅ Handle /sso-callback before any session check
+  if (window.location.pathname === '/sso-callback') return <SSOCallback />
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -24,6 +30,7 @@ export default function App() {
     )
   }
 
+  // ✅ No session → Login which redirects to portal
   if (!session) return <Login />
 
   return (
@@ -32,6 +39,7 @@ export default function App() {
         <Route path="/"             element={<Dashboard />} />
         <Route path="/findings"     element={<Findings />} />
         <Route path="/attack-graph" element={<AttackGraph />} />
+        <Route path="/sso-callback" element={<SSOCallback />} />
         <Route path="*"             element={<Navigate to="/" />} />
       </Routes>
     </Layout>

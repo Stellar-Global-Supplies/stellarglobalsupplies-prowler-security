@@ -1,7 +1,9 @@
-import { useLocation, useNavigate, Link } from 'react-router-dom'
+import { useLocation, Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { api } from '../lib/api'
+
+const LANDING_URL = import.meta.env.VITE_LANDING_URL || 'https://apps.stellarglobalsupplies.com'
 
 const NAV = [
   { path: '/',             label: 'Overview',     icon: HomeIcon },
@@ -18,32 +20,23 @@ const PROVIDER_COLORS = {
 
 export default function Layout({ children }) {
   const loc = useLocation()
-  const navigate = useNavigate()
   const [providers, setProviders] = useState([])
 
   useEffect(() => {
     api.score()
-      .then(data => {
-        const list = Object.keys(data.by_provider || {}).sort()
-        setProviders(list)
-      })
+      .then(data => setProviders(Object.keys(data.by_provider || {}).sort()))
       .catch(() => {})
   }, [])
 
+  // ✅ Sign out of Supabase then return to portal
   async function signOut() {
     await supabase.auth.signOut()
-    navigate('/')
+    window.location.replace(LANDING_URL)
   }
 
   return (
     <div style={{ display:'flex', height:'100vh', overflow:'hidden' }}>
-      {/* Sidebar */}
-      <aside style={{
-        width: 220, flexShrink: 0, background:'var(--surface)',
-        borderRight:'1px solid var(--border)', display:'flex',
-        flexDirection:'column', padding:'20px 0',
-      }}>
-        {/* Logo */}
+      <aside style={{ width:220, flexShrink:0, background:'var(--surface)', borderRight:'1px solid var(--border)', display:'flex', flexDirection:'column', padding:'20px 0' }}>
         <div style={{ padding:'0 20px 24px', borderBottom:'1px solid var(--border)' }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <ShieldLogo />
@@ -54,7 +47,6 @@ export default function Layout({ children }) {
           </div>
         </div>
 
-        {/* Provider badges */}
         <div style={{ padding:'16px 20px', borderBottom:'1px solid var(--border)' }}>
           <div style={{ fontSize:11, fontWeight:500, color:'var(--muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>Providers</div>
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
@@ -65,17 +57,12 @@ export default function Layout({ children }) {
               </>
             )}
             {providers.map(p => (
-              <ProviderBadge
-                key={p}
-                label={p.charAt(0).toUpperCase() + p.slice(1)}
-                color={PROVIDER_COLORS[p] || '#64748b'}
-              />
+              <ProviderBadge key={p} label={p.charAt(0).toUpperCase() + p.slice(1)} color={PROVIDER_COLORS[p] || '#64748b'} />
             ))}
           </div>
         </div>
 
-        {/* Nav */}
-        <nav style={{ flex:1, padding:'12px 12px' }}>
+        <nav style={{ flex:1, padding:'12px' }}>
           {NAV.map(({ path, label, icon: Icon }) => {
             const active = loc.pathname === path
             return (
@@ -85,9 +72,8 @@ export default function Layout({ children }) {
                 color: active ? '#fff' : 'var(--muted)',
                 background: active ? 'var(--accent-glow)' : 'transparent',
                 borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
-                fontWeight: active ? 500 : 400,
-                fontSize: 13,
-                transition:'all .15s',
+                fontWeight: active ? 500 : 400, fontSize:13, transition:'all .15s',
+                textDecoration:'none',
               }}>
                 <Icon size={16} color={active ? 'var(--accent)' : 'var(--muted)'} />
                 {label}
@@ -96,23 +82,21 @@ export default function Layout({ children }) {
           })}
         </nav>
 
-        {/* Sign out */}
         <div style={{ padding:'16px 12px', borderTop:'1px solid var(--border)' }}>
           <button onClick={signOut} style={{
             width:'100%', padding:'8px 12px', background:'transparent',
             border:'1px solid var(--border)', borderRadius:8,
             color:'var(--muted)', fontSize:13, display:'flex',
-            alignItems:'center', gap:8, transition:'all .15s',
+            alignItems:'center', gap:8, transition:'all .15s', cursor:'pointer',
           }}
             onMouseEnter={e => { e.currentTarget.style.borderColor='var(--critical)'; e.currentTarget.style.color='var(--critical)' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.color='var(--muted)' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)';   e.currentTarget.style.color='var(--muted)' }}
           >
             <LogoutIcon size={14} /> Sign out
           </button>
         </div>
       </aside>
 
-      {/* Main */}
       <main style={{ flex:1, overflowY:'auto', padding:'28px 32px', background:'var(--bg)' }}>
         {children}
       </main>
