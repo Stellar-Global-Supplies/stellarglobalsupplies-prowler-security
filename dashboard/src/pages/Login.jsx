@@ -13,6 +13,18 @@ export default function Login() {
       <div style={{ width:400, padding:'40px 36px', borderRadius:16, background:'var(--surface)', border:'1px solid var(--border)', boxShadow:'0 0 80px #3b82f610', textAlign:'center' }}>
         <ShieldIcon />
         <p style={{ color:'var(--muted)', fontSize:13, marginTop:16 }}>Redirecting to portal…</p>
+        <p style={{ color:'var(--muted)', fontSize:12, marginTop:20, lineHeight:1.5 }}>
+          Built by{' '}
+          <a
+            href="https://stellarforge.stellarglobalsupplies.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color:'#3b82f6', textDecoration:'none', fontWeight:600 }}
+          >
+            Stellar Forge
+          </a>
+          {' '}— engineering secure cloud infrastructure for teams that can't afford to guess.
+        </p>
       </div>
     </div>
   )
