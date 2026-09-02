@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -27,6 +28,24 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 import uuid
+
+
+def _finding_id(provider: str, check_id: str, resource_uid: str, region: str) -> str:
+    """Deterministic id for a finding, stable across repeated scans.
+
+    The Worker upserts findings with `INSERT OR REPLACE ... WHERE id = ?`,
+    so as long as the same (provider, check, resource, region) combination
+    always produces the same id, re-running a scan updates the existing
+    row instead of inserting a duplicate. Using a random UUID here (the
+    previous behavior) is what caused the findings table to grow forever.
+    """
+    key = "|".join([
+        provider or "",
+        check_id or "",
+        resource_uid or "",
+        region or "",
+    ])
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 SEVERITY_MAP = {
     "critical": 4,
@@ -170,12 +189,13 @@ def parse_json_results(filepath: str, provider: str):
         # ── Timestamp ───────────────────────────────────────────────────────
         scanned_at = f.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
+        check_id = f.get("check_id") or ""
         parsed.append({
-            "id": str(uuid.uuid4()),
+            "id": _finding_id(provider, check_id, uid, region),
             "scan_run_id": scan_id,
             "provider": provider,
             "service": svc,
-            "check_id": f.get("check_id") or "",
+            "check_id": check_id,
             "check_title": f.get("check_title") or "",
             "status": status,
             "severity": sev,
@@ -277,13 +297,14 @@ def parse_ocsf(filepath: str, provider: str):
             or ""
         ).lower()
         region = (f.get("cloud") or {}).get("region") or "global"
+        check_id = f.get("check_id") or f.get("type_uid") or ""
 
         parsed.append({
-            "id": str(uuid.uuid4()),
+            "id": _finding_id(provider, check_id, uid, region),
             "scan_run_id": scan_id,
             "provider": provider,
             "service": svc,
-            "check_id": f.get("check_id") or f.get("type_uid") or "",
+            "check_id": check_id,
             "check_title": f.get("check_title") or f.get("message") or "",
             "status": status,
             "severity": sev,
@@ -522,7 +543,7 @@ def parse_compliance_csv(output_dir: str, provider: str):
             status = "FAIL"
 
             parsed.append({
-                "id": str(uuid.uuid4()),
+                "id": _finding_id(provider, check_id, account_uid, region),
                 "scan_run_id": scan_id,
                 "provider": provider,
                 "service": service,
