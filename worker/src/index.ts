@@ -143,16 +143,24 @@ async function handleIngest(req: Request, env: Env) {
 
 // ── Score ────────────────────────────────────────────────────────────────────
 async function handleScore(env: Env) {
-  // Get all scan runs from the last 24 hours (to capture all parallel scans)
+  // Get only the MOST RECENT scan run per provider. Providers are scanned on
+  // independent schedules (e.g. hourly), and each run's scan_runs row is a
+  // complete snapshot of that scan — it is NOT a delta to be added to prior
+  // runs. Summing every run from a rolling 24h window (the previous
+  // behavior) made checks_executed/passed/failed/severity counts inflate
+  // every time the scheduled scan fired, then drop when older rows rolled
+  // out of the window. Latest-per-provider gives a stable, correct snapshot.
   const recent = await env.DB.prepare(
     `SELECT provider, score, checks_executed, total_checks, passed, failed,
             critical, high, medium, low, scanned_at
-     FROM scan_runs
-     WHERE scanned_at >= datetime('now', '-24 hours')
+     FROM scan_runs sr
+     WHERE sr.scanned_at = (
+       SELECT MAX(sr2.scanned_at) FROM scan_runs sr2 WHERE sr2.provider = sr.provider
+     )
      ORDER BY scanned_at DESC`
   ).all();
 
-  // Aggregate by provider (sum all scan runs from last 24h)
+  // One row per provider already (latest snapshot) — no summing needed.
   const byProvider: Record<string, {
     score: number;
     checks_executed: number;
@@ -168,39 +176,28 @@ async function handleScore(env: Env) {
 
   for (const row of recent.results) {
     const p = row.provider as string;
-    if (!byProvider[p]) {
-      byProvider[p] = {
-        score: 0,
-        checks_executed: 0,
-        total_checks: 0,
-        passed: 0,
-        failed: 0,
-        critical: 0,
-        high: 0,
-        medium: 0,
-        low: 0,
-        scanned_at: row.scanned_at as string,
-      };
-    }
-
-    // Aggregate counts
-    const agg = byProvider[p]!;
-    agg.checks_executed += Number(row.checks_executed ?? row.total_checks ?? 0);
-    agg.total_checks += Number(row.total_checks ?? 0);
-    agg.passed += Number(row.passed ?? 0);
-    agg.failed += Number(row.failed ?? 0);
-    agg.critical += Number(row.critical ?? 0);
-    agg.high += Number(row.high ?? 0);
-    agg.medium += Number(row.medium ?? 0);
-    agg.low += Number(row.low ?? 0);
+    // recent already contains exactly one (latest) row per provider, so this
+    // just shapes the row — no accumulation across multiple scans.
+    byProvider[p] = {
+      score: Number(row.score ?? 0),
+      checks_executed: Number(row.checks_executed ?? row.total_checks ?? 0),
+      total_checks: Number(row.total_checks ?? 0),
+      passed: Number(row.passed ?? 0),
+      failed: Number(row.failed ?? 0),
+      critical: Number(row.critical ?? 0),
+      high: Number(row.high ?? 0),
+      medium: Number(row.medium ?? 0),
+      low: Number(row.low ?? 0),
+      scanned_at: row.scanned_at as string,
+    };
   }
 
-  // Recalculate scores for each provider
+  // Recalculate scores for each provider (in case score wasn't set on ingest)
   for (const provider in byProvider) {
     const agg = byProvider[provider];
     agg.score = agg.total_checks > 0
       ? Math.round((agg.passed / agg.total_checks) * 100)
-      : 0;
+      : agg.score;
   }
 
   // Calculate overall totals
