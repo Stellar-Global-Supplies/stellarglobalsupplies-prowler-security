@@ -75,6 +75,8 @@ jobs:
   scan-neon:
     name: Scan NeonDB
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -106,6 +108,8 @@ jobs:
   scan-supabase:
     name: Scan Supabase
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -137,6 +141,8 @@ jobs:
   scan-cloudflare:
     name: Scan Cloudflare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
